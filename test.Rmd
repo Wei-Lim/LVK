@@ -1,12 +1,31 @@
+---
+title: "Test"
+author: "William Truong"
+date: "15.09.2021"
+output: 
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_collapsed: yes
+    toc_depth: 3
+    toc_float: yes
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+rm(list=ls(all = TRUE)) # Remove all objects
+cat("\014") # clearing console history
+
+knitr::opts_chunk$set(echo = TRUE)
+
 library(tidyverse)
 library(ggplot2)
+```
 
-# Extracting from lpm-file
-# dir_path <- choose.dir(
-# 	"H:/Projekte/RStudio/LVK",
-# 	#"T:/Leuchten",
-# 	caption = "Ordner mit *.txt EMV-Dateien auswählen."
-# )
+# extracting data
+
+```{r}
 dir_path <- "H:/Projekte/RStudio/LVK"
 files_path <- list.files(
 	path = dir_path, 
@@ -16,7 +35,7 @@ files_path <- list.files(
 	ignore.case = TRUE
 )
 
-file <- files_path[5]
+file <- files_path[6]
 
 lines <- readLines(file)
 header <- lines[1:42]
@@ -63,7 +82,11 @@ for (angle in C_angle[1:Icol]) {
 		bind_rows(df_I, .)
 }
 
-# data transformations 
+```
+
+# data symmetry transformations
+
+```{r}
 df_sub <- df_I
 switch(
 	Isym,
@@ -82,7 +105,7 @@ switch(
 		print(paste("Symmetrie zur Ebene C0-C180 =", Isym))
 		df_plot <- df_sub %>% 
 			mutate(C = 360 - C) %>% 
-			bind_rows(df_I, .) %>% 
+			bind_rows(df_I) %>% 
 			arrange(C) %>% 
 			filter(C != 360)
 	},
@@ -95,7 +118,7 @@ switch(
 					C >  180 ~ 270 + (270 - C)
 				)
 			) %>%
-			bind_rows(df_I, .) %>%
+			bind_rows(df_I) %>%
 			arrange(C)
 	},
 	`4` = {
@@ -111,8 +134,13 @@ switch(
 			filter(C != 360)
 	}
 )
+```
 
+# plotting light distribution
 
+## preparing data
+
+```{r}
 dat <- df_plot %>% 
 	filter(C == 0 | C == 90 | C == 180 | C == 270) %>% 
 	mutate(
@@ -126,12 +154,15 @@ dat <- df_plot %>%
 		),
 		C = factor(C, levels = c("C0/180", "C90/270"))
 	)
+```
 
-# Plotting polar graph
+## plot 1
+
+```{r}
 pracht_green <- rgb(188, 207, 3, max = 255)
 palette1 <- rep(pracht_green, times = length(unique(df_plot$C)))
 
-g1 <- ggplot(dat, aes(x = gamma, y = I, linetype = C)) +
+g2 <- ggplot(dat, aes(x = gamma, y = I, linetype = C)) +
 	geom_line(color = pracht_green, size = 1) +
 	theme_light() + 
 	scale_x_continuous(
@@ -152,4 +183,9 @@ g1 <- ggplot(dat, aes(x = gamma, y = I, linetype = C)) +
 	)
 
 print(g1)
+print(g2)
+```
+
+
+
 
