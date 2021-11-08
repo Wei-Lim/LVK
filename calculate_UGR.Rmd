@@ -6,9 +6,9 @@ output:
   html_document:
     number_sections: yes
     toc: yes
-    toc_collapsed: yes
+    toc_collapsed: no
     toc_depth: 3
-    toc_float: no
+    toc_float: yes
 editor_options:
   chunk_output_type: inline
 ---
@@ -22,12 +22,15 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(openxlsx)
 library(knitr)
-
+library(kableExtra)
 ```
 
 # Introduction
 
-From CIE-190 2010 Standard.
+Basic programming implementation from CIE-190 2010. But the extraction of luminous areas from the ldt-files are not covered.
+Therefore the extraction of luminous areas from a example ldt-file needs to be checked using the examples from CIE-117 1995 standard.
+
+Also currently there aren't check and controls for the light intensity table extraction from ldt implemented.
 
 box form, cycle form and cylindrical form need to be checked.
 
@@ -54,21 +57,21 @@ df_I <- readWorkbook(
 
 ```{r}
 t2 <- readWorkbook("CIE-190-2010_tables.xlsx", sheet = "Table 2", startRow = 1)
-kable(t2)
+kbl(t2) %>% kable_classic()
 ```
 
 ## Data for calculation of indirect illuminance on walls for luminaires in the standard array
 
 ```{r}
 t3 <- readWorkbook("CIE-190-2010_tables.xlsx", sheet = "Table 3", startRow = 1)
-kable(t3)
+kbl(t3) %>% kable_classic()
 ```
 
 ## Geometric factor values for luminaires in the standard array
 
 ```{r}
 t4 <- readWorkbook("CIE-190-2010_tables.xlsx", sheet = "Table 4", startRow = 1)
-kable(t4)
+kbl(t4) %>% kable_classic()
 ```
 
 ## Transfer factor values
@@ -79,7 +82,7 @@ t5 <- readWorkbook(
 	sheet = "Table 5_long",
 	startRow = 1
 	)
-kable(t5)
+kable(t5) %>% kable_classic()
 ```
 
 # Working Example
@@ -451,7 +454,7 @@ kbl(
 	align = c("r"),
 	col.names = c("X", "Y", reflectance_names, reflectance_names)
 	) %>% 
-	kable_classic_2() %>% 
+	kable_paper() %>% 
 	add_header_above(c(
 		"Room Dimensions" = 2, 
 		"Reflectances (Ceiling/Wall/Reference plane)" = 5, 
@@ -463,5 +466,439 @@ kbl(
 		"Viewed endwise" = 5
 		)) %>% 
 	row_spec(c(6, 12, 16), extra_css = "border-bottom: 1px solid") 
+```
+
+
+# Using example ldt to calculate UGR tables
+
+## extracting luminous intensity from ldt.-file (parabolic)
+```{r}
+file <- "lvk/0_CIE-117-1995_4_Parabolic.ldt"
+
+lines <- readLines(file)
+header <- lines[1:42]
+data <- lines[-(1:42)]
+
+# Art der Symmetrie Isym
+Isym <- header[3]
+# Anzahl Mc der C-Ebenen zwischen 0° und 360°
+Mc <- header[4] %>% as.numeric()
+# Winkelintervall Dc zwischen den C-Ebenen
+#   (Dc = 0 für nicht-äquidistante C-Ebenen)
+Dc <- header[5] %>% as.numeric()
+# Anzahl Ng der Lichtstärkewerte in jeder C-Ebene
+Ng <- header[6] %>% as.numeric()
+# Winkelintervall Dg <- zwischen den Lichtstärke werten einer C-Ebene
+#   (Dg = 0 für nicht-äquidistante Lichtstärkewerte in einer C-Ebene)
+Dg <- header[7] %>% as.numeric()
+
+flux_all <- header[29] %>% as.numeric()
+power <- header[32] %>% as.numeric()
+
+C_angle <- data[1:Mc] %>% as.numeric()
+data <- data[-(1:Mc)]
+G_angle <- data[1:Ng] %>% as.numeric()
+data <- data[-(1:Ng)]
+
+#### area needs to be defined
+A_B <- 0.1452 
+A_S <- 0
+A_E <- 0
+
+
+switch(
+	Isym, 
+	`0` = Icol <- Mc,
+	`1` = Icol <- 1,
+	`2` = Icol <- Mc / 2 + 1,
+	`3` = Icol <- Mc / 2 + 1,
+	`4` = Icol <- Mc / 4 + 1
+)
+
+df_I <- data.frame(gamma = numeric(), C = numeric(), I = numeric())
+data_sub <- data
+for (angle in C_angle[1:Icol]) {
+	gamma <- G_angle
+	C <- if_else(Isym != "3", angle, angle + 90)
+	I <- data_sub[1:Ng] %>% as.numeric()
+	data_sub <- data_sub[-(1:Ng)]
+	df_I <- data.frame(gamma, C, I) %>% 
+		bind_rows(df_I, .)
+}
+```
+
+## data symmetry transformations
+
+```{r}
+df_sub <- df_I
+switch(
+	Isym,
+	`0` = {
+		print(paste("keine Symmetrie =", Isym))
+	},
+	`1` = {
+		print(paste("Symmetrie zur vertikalen Achse =", Isym))
+		for (angle in seq(Dc, 360, Dc)) {
+			df_plot <- df_sub %>% 
+				mutate(C = angle) %>% 
+				bind_rows(df_I, .)
+		}
+	},
+	`2` = {
+		print(paste("Symmetrie zur Ebene C0-C180 =", Isym))
+		df_plot <- df_sub %>% 
+			mutate(C = 360 - C) %>% 
+			bind_rows(df_I) %>% 
+			arrange(C) %>% 
+			filter(C != 360)
+	},
+	`3` = {
+		print(paste("Symmetrie zur Ebene C90-C270 =", Isym))
+		df_plot <- df_sub %>% 
+			mutate(
+				C = case_when(
+					C <= 180 ~ 180 - C,
+					C >  180 ~ 270 + (270 - C)
+				)
+			) %>%
+			bind_rows(df_I) %>%
+			arrange(C)
+	},
+	`4` = {
+		print(paste("Symmetrie zu den Ebenen C0-C180 und C90-C270 =", Isym))
+		df_sub <- df_sub %>% 
+			mutate(C = 180 - C) %>%
+			bind_rows(df_I) %>%
+			arrange(C)
+		df_plot <- df_sub %>% 
+			mutate(C = 360 - C) %>% 
+			bind_rows(df_sub) %>% 
+			arrange(C) %>% 
+			filter(C != 360) %>% 
+			distinct()
+	}
+)
+
+# Interpolation of gamma and C angles
+
+df_interp <- df_plot %>% 
+	pivot_wider(names_from = "gamma", values_from = "I") %>% 
+	summarise(across(-C, ~ pracma::interp1(C, .x, seq(0, 345, 15)))) %>% 
+	mutate(C = seq(0, 345, 15)) %>% 
+	pivot_longer(-C, names_to = "gamma", values_to = "I") %>% 
+	mutate(gamma = as.numeric(gamma))
+
+df_interp <- df_interp %>% 
+	pivot_wider(names_from = "C", values_from = "I", names_prefix = "C") %>% 
+	summarise(across(-gamma, ~ pracma::interp1(gamma, .x, seq(0, 180, 5)))) %>% 
+	mutate(gamma = seq(0, 180, 5)) %>% 
+	relocate(gamma)
+
+
+
+```
+
+
+## UGR Table calculations
+
+
+```{r}
+zone_factor = c(0.095, 0.283, 0.463, 0.628, 0.774, 0.897, 0.993, 1.058, 1.091)
+df_90 <- df_interp %>% 
+	filter(gamma %in% seq(5, 85, 10)) %>% 
+	mutate(
+		AverageIntensity = rowMeans(across(C0:C345)),
+		ZoneFactor = zone_factor,
+		ZonalFlux = round(AverageIntensity * ZoneFactor, 2),
+		## Wrong average intensities check CIE standard
+		# ZonalFlux = c(25.10,  72.55, 106.69, 120.47, 116.03,
+		# 							95.71,  66.66,  37.58, 11.95)
+		)
+flux_total_90 <- sum(df_90$ZonalFlux)
+df_180 <- df_interp %>% 
+	filter(gamma %in% seq(95, 175, 10)) %>% 
+	mutate(
+		AverageIntensity = rowMeans(across(C0:C345)),
+		ZoneFactor = rev(zone_factor),
+		ZonalFlux = (AverageIntensity * ZoneFactor) %>% round(2)
+		)
+flux_total <- flux_total_90 + sum(df_180$ZonalFlux)
+
+R_LO  <- (flux_total_90 / flux_0) %>% round(2)
+F_S   <- (R_LO * 1000 / flux_total) %>% round(3)
+R_DLO <- (flux_total_90 * F_S / 1000) %>% round(2)
+R_ULO <- R_LO - R_DLO
+
+df_90 <- df_90 %>% 
+	mutate(
+		ZonalFlux_FxSF = (ZonalFlux * F_S) %>% round(2),
+		##  rounding problems in CIE standard
+		# ZonalFlux_FxSF = c(25.00, 72.26, 106.26, 119.98, 115.57,
+		# 									 95.32, 66.39,  37.43, 11.91)
+		)
+
+zonal_flux_0_40 <- df_90 %>% 
+	filter(0 < gamma & gamma < 40) %>% 
+	summarise(across(ZonalFlux_FxSF, sum)) %>% 
+	pull()
+zonal_flux_0_60 <- df_90 %>% 
+	filter(0 < gamma & gamma < 60) %>% 
+	summarise(across(ZonalFlux_FxSF, sum)) %>% 
+	pull()
+zonal_flux_0_70 <- df_90 %>% 
+	filter(0 < gamma & gamma < 70) %>% 
+	summarise(across(ZonalFlux_FxSF, sum)) %>% 
+	pull()
+zonal_flux_0_90 <- df_90 %>% 
+	filter(0 < gamma & gamma < 90) %>% 
+	summarise(across(ZonalFlux_FxSF, sum)) %>% 
+	pull()
+zonal_flux_40_50 <- df_90 %>% 
+	filter(40 < gamma & gamma < 50) %>% 
+	summarise(across(ZonalFlux_FxSF, sum)) %>% 
+	pull()
+zonal_flux_70_80 <- df_90 %>% 
+	filter(70 < gamma & gamma < 80) %>% 
+	summarise(across(ZonalFlux_FxSF, sum)) %>% 
+	pull()
+
+flux_zL1 <- (zonal_flux_0_40 + 0.130 * zonal_flux_40_50) %>% round(2)
+flux_zL2 <-  zonal_flux_0_60 %>% round(2)
+flux_zL3 <- (zonal_flux_0_70 + 0.547 * zonal_flux_70_80) %>% round(2)
+flux_zL4 <-  zonal_flux_0_90 %>% round(2)
+
+F_GL <- filter(t4, X_Dim == X & Y_Dim == Y)
+
+F_GL1 <- F_GL$F_GL1
+F_GL2 <- F_GL$F_GL2
+F_GL3 <- F_GL$F_GL3
+F_GL4 <- F_GL$F_GL4
+
+flux_zL <- (flux_zL1 * F_GL1 + flux_zL2 * F_GL2 + 
+						flux_zL3 * F_GL3 + flux_zL4 * F_GL4) %>% round(2)
+
+F_DF <- (flux_zL / flux_0) %>% round(2)
+F_DW <- R_DLO - F_DF
+F_DC <- R_ULO
+
+F_T <- filter(t5, `Reflectance_C/W/R` == reflectance & X_Dim == X & Y_Dim == Y)
+
+`F_T,FW` <- F_T$`F_T,FW`
+`F_T,WW-1` <- F_T$`F_T,WW-1`
+`F_T,CW` <- F_T$`F_T,CW`
+
+F_UWID <- (F_DF * `F_T,FW` + F_DW * `F_T,WW-1` + F_DC * `F_T,CW`) %>% round(4)
+
+B <- filter(t3, X_Dim == X & Y_Dim == Y) %>% pull(B)
+
+E_WID <- (F_UWID * B) %>% round(2)
+
+
+UGR_table <- t5 %>% 
+	select(`Reflectance_C/W/R`:Y_Dim) %>% 
+	mutate(UGR_cross = NA, UGR_end = NA)
+
+for (i in seq(nrow(UGR_table))) {
+	# pre-definitions
+	X <- UGR_table$X_Dim[i]
+	Y <- UGR_table$Y_Dim[i]
+	reflectance <- UGR_table$`Reflectance_C/W/R`[i]
+
+	# cumulative CIE zonal flux
+	df_90 <- df_90 %>% 
+	mutate(ZonalFlux_FxSF = (ZonalFlux * F_S) %>% round(2))
+
+	zonal_flux_0_40 <- df_90 %>% 
+		filter(0 < gamma & gamma < 40) %>% 
+		summarise(across(ZonalFlux_FxSF, sum)) %>% 
+		pull()
+	zonal_flux_0_60 <- df_90 %>% 
+		filter(0 < gamma & gamma < 60) %>% 
+		summarise(across(ZonalFlux_FxSF, sum)) %>% 
+		pull()
+	zonal_flux_0_70 <- df_90 %>% 
+		filter(0 < gamma & gamma < 70) %>% 
+		summarise(across(ZonalFlux_FxSF, sum)) %>% 
+		pull()
+	zonal_flux_0_90 <- df_90 %>% 
+		filter(0 < gamma & gamma < 90) %>% 
+		summarise(across(ZonalFlux_FxSF, sum)) %>% 
+		pull()
+	zonal_flux_40_50 <- df_90 %>% 
+		filter(40 < gamma & gamma < 50) %>% 
+		summarise(across(ZonalFlux_FxSF, sum)) %>% 
+		pull()
+	zonal_flux_70_80 <- df_90 %>% 
+		filter(70 < gamma & gamma < 80) %>% 
+		summarise(across(ZonalFlux_FxSF, sum)) %>% 
+		pull()
+	
+	# distributions factors
+	flux_zL1 <- (zonal_flux_0_40 + 0.130 * zonal_flux_40_50) %>% round(2)
+	flux_zL2 <-  zonal_flux_0_60 %>% round(2)
+	flux_zL3 <- (zonal_flux_0_70 + 0.547 * zonal_flux_70_80) %>% round(2)
+	flux_zL4 <-  zonal_flux_0_90 %>% round(2)
+	
+	F_GL <- filter(t4, X_Dim == X & Y_Dim == Y)
+
+	F_GL1 <- F_GL$F_GL1
+	F_GL2 <- F_GL$F_GL2
+	F_GL3 <- F_GL$F_GL3
+	F_GL4 <- F_GL$F_GL4
+	
+	flux_zL <- (flux_zL1 * F_GL1 + flux_zL2 * F_GL2 + 
+							flux_zL3 * F_GL3 + flux_zL4 * F_GL4) %>% round(2)
+	
+	F_DF <- (flux_zL / flux_0) %>% round(2)
+	F_DW <- R_DLO - F_DF
+	F_DC <- R_ULO
+	
+	# indirect utilisation factor for walls
+	F_T <- t5 %>% 
+		filter(`Reflectance_C/W/R` == reflectance & X_Dim == X & Y_Dim == Y)
+
+	`F_T,FW` <- F_T$`F_T,FW`
+	`F_T,WW-1` <- F_T$`F_T,WW-1`
+	`F_T,CW` <- F_T$`F_T,CW`
+	
+	F_UWID <- (F_DF * `F_T,FW` + F_DW * `F_T,WW-1` + F_DC * `F_T,CW`) %>% round(4)
+		
+	# E_WID
+	B <- filter(t3, X_Dim == X & Y_Dim == Y) %>% pull(B)
+	E_WID <- (F_UWID * B) %>% round(2)
+	
+	# calculate UGR values
+	gamma_x <- df_interp$gamma
+	df <- select(df_interp, -(gamma)) %>% 
+		mutate(C360 = C0)
+	C_x <- colnames(df) %>% sub("C", "", .) %>% as.numeric()
+	I_x <- data.matrix(df) %>% t()
+	
+	# for linear intepolating the luminous intensity data
+	y_R_H <- stringr::str_sub(Y, 1, nchar(Y) - 1) %>% as.numeric() - 0.5
+	x_T_H <- stringr::str_sub(X, 1, nchar(X) - 1) %>% as.numeric() / 2 - 0.5
+	
+	df_sub <- filter(t2, `x_T/H` <= x_T_H)
+	
+	df_cross <- df_end <- data.frame()
+	
+	for (i_x in unique(df_sub$`x_T/H`)) {
+		df_sub2 <- df_sub %>% 
+			filter(`x_T/H` == i_x & `y_R/H` <= y_R_H) %>% 
+			drop_na()
+		df_cross <- df_sub2 %>% 
+			mutate(C = 360 - C) %>%
+			bind_rows(df_sub2, .) %>% 
+			mutate(
+				I_Cgamma = pracma::interp2(gamma_x, C_x, I_x, gamma, C),
+				A = (A_B * `H/D` + A_S * `y_R/D` + A_E * `x_T/D`) %>% round(3)
+				) %>% 
+			bind_rows(df_cross, .)
+		
+		df_sub3 <- df_sub2 %>% mutate(C = 90 + C)
+		df_end <- df_sub2 %>% 
+			mutate(C = 90 - C) %>%
+			bind_rows(df_sub3, .) %>% 
+			mutate(
+				I_Cgamma = pracma::interp2(gamma_x, C_x, I_x, gamma, C),
+				A = (A_B * `H/D` + A_S * `x_T/D` + A_E * `y_R/D`) %>% round(3)
+				) %>% 
+			bind_rows(df_end, .)
+	}
+	
+	# UGR viewed crosswise
+	K <- df_cross$K
+	I_Cgamma <- df_cross$I_Cgamma
+	A <- df_cross$A
+	
+	UGR_cross <- (8 * log10(sum(K * I_Cgamma^2 / A)) - 8 * log10(E_WID)) %>% 
+		round(1)
+	UGR_table$UGR_cross[i] <- UGR_cross
+	
+	# UGR viewed endwise
+	K <- df_end$K
+	I_Cgamma <- df_end$I_Cgamma
+	A <- df_end$A
+	
+	UGR_end <- (8 * log10(sum(K * I_Cgamma^2 / A)) - 8 * log10(E_WID)) %>% 
+		round(1)
+	UGR_table$UGR_end[i] <- UGR_end
+}
+
+
+```
+
+### printing UGR table
+
+```{r}
+dt <- UGR_table %>% 
+	pivot_wider(names_from = `Reflectance_C/W/R`, values_from = c(UGR_cross, UGR_end))
+
+reflectance_names <- unique(UGR_table$`Reflectance_C/W/R`)
+
+kbl(
+	dt, 
+	align = c("r"),
+	col.names = c("X", "Y", reflectance_names, reflectance_names)
+	) %>% 
+	kable_paper() %>% 
+	add_header_above(c(
+		"Room Dimensions" = 2, 
+		"Reflectances (Ceiling/Wall/Reference plane)" = 5, 
+		"Reflectances (Ceiling/Wall/Reference plane)" = 5
+		)) %>% 
+	add_header_above(c(
+		" " = 2, 
+		"Viewed crosswise" = 5,
+		"Viewed endwise" = 5
+		)) %>% 
+	row_spec(c(6, 12, 16), extra_css = "border-bottom: 1px solid") 
+```
+
+
+```{r}
+dat <- df_interp %>% 
+	filter(C == 0 | C == 90 | C == 180 | C == 270) %>% 
+	mutate(
+		gamma = case_when(
+			C == 0   | C == 90  ~ 360 -gamma, # transfrom for plotting
+			C == 180 | C == 270 ~ gamma, 
+		),
+		C = case_when(
+			C == 0  | C == 180 ~ "C0/180",
+			C == 90 | C == 270 ~ "C90/270"
+		),
+		C = factor(C, levels = c("C0/180", "C90/270"))
+	)
+```
+
+## plot 1
+
+```{r}
+pracht_green <- rgb(188, 207, 3, max = 255)
+palette1 <- rep(pracht_green, times = length(unique(df_plot$C)))
+
+g2 <- ggplot(dat, aes(x = gamma, y = I, linetype = C)) +
+	geom_line(color = pracht_green, size = 1) +
+	theme_light() + 
+	scale_x_continuous(
+		limits = c(0, 360),
+		breaks = seq(0, 330, 30),
+		labels = c("0", "30", "60", "90", "120", "150", "180", "150", "120", "90",
+							 "60", "30")
+	) +
+	coord_polar(start = pi) +
+	theme(
+		legend.title = element_blank(),
+		legend.position = "top",
+		legend.box.spacing = unit(0, "mm")
+	) +
+	labs(
+		x = expression(gamma ~ "in °"),
+		y = expression(paste("I in cd/1000 lm"))
+	)
+
+print(g2)
+```
 ```
 
