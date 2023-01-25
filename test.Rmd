@@ -66,7 +66,7 @@ files_path <- list.files(
 ## CIE 190:2010 Tabelle 7
 
 ```{r}
-file <- files_path[2]
+file <- files_path[3]
 
 # Einlesen der txt-Zeilen
 LDT <- readLines(file)
@@ -266,7 +266,8 @@ luminaire %>%
 
 #### Berechnung der Distanz / Sichtwinkel zwischen Leuchte und Beobachter und der sichtbaren leuchtenden Fläche
 
-Leuchtende Fläche wurde vorgegeben und wird nicht aus der LDT-Datei entnommen. 
+Leuchtende Fläche wurde vorgegeben und wird nicht aus der LDT-Datei entnommen.
+
 ```{r}
 A_B <- 0.316 # area of luminous base in m²
 A_S <- 0     # area of luminous side in m²
@@ -276,17 +277,20 @@ luminaire <- luminaire %>%
 	mutate(
 		R = sqrt(X^2 + Y^2 + H^2),
 		G = acos(H / R) / pi * 180,
-		C_cross = atan(X / Y) / pi * 180,
-		C_cross = if_else(X < 0, C_cross + 360, C_cross),
-		C_end = 90 + atan(X / Y) / pi * 180,
-		A_p_end  = A_B * H / R + A_S * X / R + A_E * Y / R,
-		A_p_cross = A_B * H / R + A_S * X / R + A_E * Y / R
+		C_crosswise = atan(X / Y) / pi * 180,
+		C_crosswise = if_else(X < 0, C_crosswise + 360, C_crosswise),
+		C_endwise = 90 + atan(X / Y) / pi * 180,
+		Ap_endwise  = A_B * H / R + A_S * X / R + A_E * Y / R,
+		Ap_crosswise = A_B * H / R + A_S * X / R + A_E * Y / R
 		)
 luminaire %>% 
 	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>% 
 	kable() %>% 
 	kable_classic()
 ```
+
+
+
 
 <!-- #### Berechnung der sichtbaren Leuchtenfläche -->
 
@@ -343,12 +347,19 @@ C_x <- unique(df_I$C) %>% c(360)
 I_x <- select(df_I_wide, -c(G, I_avg, zonal_flux)) %>%
 	mutate(`360` = `0`) %>%
 	t()
-luminaire$I_CG_cross <- interp2(
-	G_x, C_x, I_x, luminaire$G, luminaire$C_cross
-	)
-luminaire$I_CG_end <- interp2(
-	G_x, C_x, I_x, luminaire$G, luminaire$C_end
-	)
+
+luminaire <- luminaire %>% 
+	mutate(
+		ICG_crosswise = interp2(G_x, C_x, I_x, G, C_crosswise),
+		ICG_endwise = interp2(G_x, C_x, I_x, G, C_endwise)
+	) %>% 
+	pivot_longer(
+		cols = ends_with("wise"),
+		names_to = c(".value", "View"),
+		names_pattern = "(.*)_(.*)"
+		) %>% 
+	rename(A_p = Ap, I_CG = ICG)
+
 luminaire %>% 
 	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>% 
 	kable() %>% 
@@ -394,10 +405,8 @@ luminaire <- left_join(luminaire, t4, by = c("X_Dim", "Y_Dim")) %>%
 		F_DW = R_DLO - F_DF,
 		F_DC = R_ULO,
 		F_UWID = F_DF * `F_T,FW` + F_DW * `F_T,WW-1` + F_DC * `F_T,CW`,
-		B_end = 1000 * N / A_wall,
-		B_cross = 1000 * N / A_wall,
-		E_WID_end = F_UWID * B_end,
-		E_WID_cross = F_UWID * B_cross
+		B = 1000 * N / A_wall,
+		E_WID = F_UWID * B
 	)
 luminaire %>% 
 	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>% 
@@ -405,332 +414,444 @@ luminaire %>%
 	kable_classic()
 ```
 
+### UGR 
+
+#### Berechnung
 
 ```{r}
 UGR_sum <- luminaire %>% 
 	na.omit() %>% 
 	# Calculating the sum-part before taking the sum
-	mutate(SUM = I_CG_cross^2 /( A_p_cross * R^2 * p^2)) %>% 
-	group_by(`Reflectance_C/W/R`, X_Dim, Y_Dim) %>% 
+	mutate(SUM = I_CG^2 /( A_p * R^2 * p^2)) %>% 
+	group_by(`Reflectance_C/W/R`, X_Dim, Y_Dim, View) %>% 
 	summarise(across(SUM, sum )) %>% 
 	ungroup()
 
-
-UGR_sum %>%
-	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>%
-	kable() %>%
-	kable_classic()
-
 UGR <- luminaire %>% 
-	select(`Reflectance_C/W/R`, X_Dim, Y_Dim, E_WID_cross) %>% 
+	select(`Reflectance_C/W/R`, X_Dim, Y_Dim, E_WID) %>% 
 	distinct() %>% 
 	right_join(UGR_sum, by = c("Reflectance_C/W/R", "X_Dim", "Y_Dim")) %>% 
-	mutate(UGR = 8 * log10(SUM / 4) - 8 * log10 (E_WID_cross / pi))
+	mutate(UGR = 8 * log10(SUM / 4) - 8 * log10 (E_WID / pi)) %>% 
+	mutate(UGR = round(UGR, 1)) %>% 
+	arrange(View) %>% 
+	select(-c(E_WID, SUM))
 
 UGR %>% 
 	kable() %>% 
 	kable_classic()
 
+```
+#### Erstellung der Tabelle 
+
+```{r}
+reflectance_names <- unique(UGR$`Reflectance_C/W/R`) %>% as.character()
+
+UGR_table <- UGR %>% 
+	pivot_wider(
+		names_from = c(View, `Reflectance_C/W/R`), 
+		names_glue = "{.value}_{View}_{`Reflectance_C/W/R`}",
+		values_from = UGR
+		)
+
+kbl(
+	UGR_table, 
+	align = c("r"),
+	col.names = c("X", "Y", reflectance_names, reflectance_names)
+	) %>% 
+	kable_paper() %>% 
+	add_header_above(c(
+		"Room Dimensions" = 2,
+		"Reflectances (Ceiling/Wall/Reference plane)" = 5,
+		"Reflectances (Ceiling/Wall/Reference plane)" = 5
+		)) %>%
+	add_header_above(c(
+		" " = 2,
+		"Viewed crosswise" = 5,
+		"Viewed endwise" = 5
+		)) %>%
+	row_spec(c(6, 12, 16), extra_css = "border-bottom: 1px solid")
+```
+
+## CIE 117:1995 Tabelle D1
+
+```{r}
+file <- files_path[1]
+
+# Einlesen der txt-Zeilen
+LDT <- readLines(file)
+```
+
+### Einlesen der LDT-Datei
+
+#### Header-Daten
+```{r}
+# Art der Symmetrie Isym
+Isym <- LDT[3]
+# Anzahl Mc der C-Ebenen zwischen 0° und 360°
+Mc <- LDT[4] %>% as.numeric()
+# Winkelintervall Dc zwischen den C-Ebenen
+#   (Dc = 0 für nicht-äquidistante C-Ebenen)
+Dc <- LDT[5] %>% as.numeric()
+# Anzahl Ng der Lichtstärkewerte in jeder C-Ebene
+Ng <- LDT[6] %>% as.numeric()
+# Winkelintervall Dg <- zwischen den Lichtstärke werten einer C-Ebene
+#   (Dg = 0 für nicht-äquidistante Lichtstärkewerte in einer C-Ebene)
+Dg <- LDT[7] %>% as.numeric()
+# Abmessungen der Leuchte l x b x h in m
+l <- LDT[13] %>% as.numeric() / 1000
+b <- LDT[14] %>% as.numeric() / 1000
+h <- LDT[15] %>% as.numeric() / 1000
+# Abmessungen der leuchtende Fläche in m
+l_lum <- LDT[16] %>% as.numeric() / 1000
+b_lum <- LDT[17] %>% as.numeric() / 1000
+h_lum <- LDT[18:21] %>% as.numeric() / 1000
+# Anzahl der Lampen
+N_lamp <- LDT[26] %>% as.numeric()
+# Lichtstrom aller Lampen
+light_flux <- LDT[29] %>% as.numeric()
+```
+
+### Einlesen von CIE 190:2010 Tabellen
+
+#### Transfer factor values
+
+
+#### Winkel- und Lichtstärke-Daten
+```{r}
+# Offsets
+offset1 <- 32 + (N_lamp - 1) * 6
+offset2 <- offset1 + 10
+offset3 <- offset2 + Mc
+offset4 <- offset3 + Ng
+
+# Lampendaten
+lamp_data <- LDT[27:offset1]
+# Direct Ratios für definierte Raum-Indexe
+direct_ratios <- LDT[(offset1 + 1):offset2]
+# C-Winkel
+C_angle <- LDT[(offset2 + 1):offset3] %>% as.numeric()
+# G-Winkel (gamma)
+G_angle <- LDT[(offset3 + 1):offset4] %>% as.numeric()
+if (Isym == "3") {G_angle <- G_angle + 90}
+
+data <- LDT[-(1:offset4)]
+
+switch(Isym,
+	`0` = C_end_value <- Mc,
+	`1` = C_end_value <- 1,
+	`2` = C_end_value <- Mc / 2 + 1,
+	`3` = C_end_value <- Mc / 2 + 1,
+	`4` = C_end_value <- Mc / 4 + 1
+)
+
+df_I <- data.frame(G = numeric(), C = numeric(), I = numeric())
+data_sub <- data
+for (angle in C_angle[1:C_end_value]) {
+	G <- G_angle
+	C <- if_else(Isym != "3", angle, angle + 90)
+	I <- data_sub[1:Ng] %>% as.numeric()
+	data_sub <- data_sub[-(1:Ng)]
+	df_I <- data.frame(G, C, I) %>%
+		bind_rows(df_I, .)
+}
+```
+
+
+### Vorverarbeitung der LDT-Daten
+
+#### Korrekturberechnung des Lichtstärke der C-Ebenen bei gamma = 0
+
+Später einbauen
+
+```{r}
+
+```
+
+#### Berechnung der Partiallichtströme und Betriebswirkungsgrade
+
+```{r}
+# Berechne die Verschiebung der gamma-Winkel für Partiallichtströme
+G_1 <- G_angle - Dg / 2
+G_2 <- G_angle + Dg / 2
+G_zonal_flux <- G_2
+G_1 <- if_else(G_1 < 0  ,   0, G_1)
+G_2 <- if_else(G_2 > 180, 180, G_2)
+# Berechnung des Raumwinkels Omega aller Teillichtströme
+Omega <- 2 * pi * ( cos(G_1 * pi / 180) - cos(G_2 * pi / 180) )
+# Aufhebung der normierten Lichtstärkewerte
+df_I_wide <- df_I %>%
+	mutate( I_abs = I * (light_flux / 1000) ) %>%
+	select(-I) %>%
+	pivot_wider(names_from = C, values_from = I_abs) %>%
+	mutate(
+		I_avg = rowMeans(across(-G)),
+		zonal_flux = I_avg * Omega
+		)
+zonal_flux_cumsum <- cumsum(df_I_wide$zonal_flux)
+# lineare Interpolation
+FCL <- interp1( G_zonal_flux, zonal_flux_cumsum, c(41.4, 60, 75, 90) )
+R_LO  <- tail(zonal_flux_cumsum, 1) / light_flux   # light output ratio
+F_S   <- R_LO * 1000 / tail(zonal_flux_cumsum, 1)  # scale factor
+R_DLO <- FCL[4] * F_S / light_flux # downward light output ratio
+R_ULO <- R_LO - R_DLO				       # upward light output ratio
 
 ```
 
 
+#### Definition der Raumdimensionen
 
 ```{r}
-t3 <- readWorkbook("CIE-190-2010_tables.xlsx", sheet = "Table 3", startRow = 1)
-t3_sub <- t3 %>%
-	filter(X_Dim == "2H" & Y_Dim == "4H")
-B <- t3_sub$B
-t4 <- readWorkbook("CIE-190-2010_tables.xlsx", sheet = "Table 4", startRow = 1)
-t4_sub <- t4 %>%
-	filter(X_Dim == "2H" & Y_Dim == "4H")
-F_GL1 <- t4_sub$F_GL1
-F_GL2 <- t4_sub$F_GL2
-F_GL3 <- t4_sub$F_GL3
-F_GL4 <- t4_sub$F_GL4
+SHR <- 0.25 / 1       # Space to Height Ratio
+H <- 2             # Montagehöhe der Leuchte bzgl. Beobachterposition
+S <- SHR * H       # Abstand zwischen Leuchten
+S2 <- S / 2
+```
 
-t5 <- readWorkbook(
+Raumdaten und dazugehörige Transferfaktorenwerte ("transfer factor values") aus [@cie2010] Tabelle 5.
+
+```{r}
+room_param <- readWorkbook(
 	"CIE-190-2010_tables.xlsx",
 	sheet = "Table 5_long",
 	startRow = 1
+	) %>%
+	mutate(
+		`Reflectance_C/W/R` = factor(
+			`Reflectance_C/W/R`, 
+			levels = unique(`Reflectance_C/W/R`), 
+			ordered = TRUE
+			),
+		X_Dim = factor(X_Dim, levels = unique(X_Dim), ordered = TRUE),
+		Y_Dim = factor(Y_Dim, levels = unique(Y_Dim), ordered = TRUE),
+		X_abs = sub("H", "", X_Dim) %>% as.numeric() * H, # in m
+		Y_abs = sub("H", "", Y_Dim) %>% as.numeric() * H  # in m
 	)
-t5_sub <- t5 %>%
-	filter(X_Dim == "2H" & Y_Dim == "4H" & `Reflectance_C/W/R` == "70/50/20")
-F_TFW <- t5_sub$`F_T,FW`
-F_TWW <- t5_sub$`F_T,WW-1`
-F_TCW <- t5_sub$`F_T,CW`
+
+kable(room_param) %>% kable_classic()
+```
+
+#### Berechnung der Leuchtenpositionen
+
+Nur die in der CIE 190:2010 betrachtetenden Raum-Dimensionen werden in den folgenden Tabellen angezeigt, um die einzelnen Schritte der Berechnung übersichtlich kontrollieren zu können. Die komplette UGR Tabelle wird am Ende ausgegeben.
+
+```{r}
+luminaire <- room_param %>% 
+	group_by(`Reflectance_C/W/R`, X_Dim, Y_Dim) %>% 
+	expand(
+		seq(-(X_abs / H) + S2, (X_abs / H) - S2, S),
+		seq(S2, Y_abs, S),
+		) %>% 
+	rename("X" = 4, "Y" = 5) %>% 
+	left_join(room_param, by = c("Reflectance_C/W/R", "X_Dim", "Y_Dim")) %>% 
+	ungroup()
+
+luminaire %>% 
+	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>% 
+	kable() %>% 
+	kable_classic()
+```
+
+### Berechnung der Direktblendung
+
+#### Berechnung der Distanz / Sichtwinkel zwischen Leuchte und Beobachter und der sichtbaren leuchtenden Fläche
+
+Unbedingt hier eine Grafik mit der Definition der C-Ebenen einer Leuchte darstellen, um die C-Ebenen Winkeln zu verstehen. 
+
+```{r}
+test <- luminaire %>%
+	mutate(
+		R = sqrt(X^2 + Y^2 + H^2),
+		G = acos(H / R) / pi * 180,
+		C_crosswise = - atan(X / Y) / pi * 180,
+		C_crosswise = if_else(X > 0, C_crosswise + 360, C_crosswise),
+		# Drehung der Leuchten um 90°
+		C_endwise = if_else(X > 0, C_crosswise - 270, C_crosswise + 90)
+		)
+```
+
+
+
+Berechnung der sichtbaren leuchtende Fläche $A_p$ nach CIE 117 1995 Abbildung C3
+
+
+
+```{r}
+# Ist die leuchtende Fläche rechteckig?
+if ( LDT[16] > 0 & LDT[17] > 0 ) {
+	# Ist die leuchtende Fläche ein Quader?
+	if ( mean(as.numeric(LDT[18:21])) > 0 ) {
+		Ap_crosswise <- 
+	}
+} 
+
 ```
 
 
 ```{r}
-zonal_flux <- FCL[1] * F_GL1 + FCL[2] * F_GL2 + FCL[3] * F_GL3 + FCL[4] * F_GL4
+A_B <- 0.1425 # area of luminous base in m²
+A_S <- 0      # area of luminous side in m²
+A_E <- 0      # area of luminous end  in m²
 
-F_DF <- zonal_flux / 1000
-F_DW <- R_DLO - F_DF
-F_DC <- R_ULO
 
-F_UWID = F_DF * F_TFW + F_DW * F_TWW + F_DC * F_TCW
-F_UWID
+
+luminaire <- luminaire %>%
+	mutate(
+		R = sqrt(X^2 + Y^2 + H^2),
+		G = acos(H / R) / pi * 180,
+		C_crosswise = atan(X / Y) / pi * 180,
+		C_crosswise = if_else(X < 0, C_crosswise + 360, C_crosswise),
+		C_endwise = 90 + atan(X / Y) / pi * 180,
+		Ap_endwise  = A_B * H / R + A_S * X / R + A_E * Y / R,
+		Ap_crosswise = A_B * H / R + A_S * X / R + A_E * Y / R
+		)
+luminaire %>% 
+	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>% 
+	kable() %>% 
+	kable_classic()
 ```
 
-Wall_Area kann aus X, Y und H berechnet werden.
+#### Berechnung des Positionsindexes
 
 ```{r}
-B <- 1000 * nrow(luminaire) / t3_sub$Wall_Area
+t4.1 <- read.csv("CIE-117-1995_table4.1.csv", skip = 1, check.names = F) %>%
+	filter(!is.na(`T/R`))
+X_Y_x <- t4.1$`T/R`
+H_Y_x <- select(t4.1, -`T/R`) %>% colnames() %>% as.numeric()
+p_x <- select(t4.1, -`T/R`) %>% data.matrix() %>% t()
 
-
-
-E_WID <- F_UWID * B
-E_WID
+luminaire <- luminaire %>%
+	mutate(
+		X_Y = abs(X / Y),
+		H_Y = abs(H / Y),
+		p = interp2(X_Y_x, H_Y_x, p_x, X_Y, H_Y)
+	)
+luminaire %>% 
+	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>% 
+	kable() %>% 
+	kable_classic()
 ```
 
+#### Berechnung der Lichtstärke der Leuchten zum Beobachter
 
-# Einlesen von LDT - Dateien
+```{r}
+G_x <- unique(df_I$G)
+# add additional C360 for interpolating. Same values as C0
+C_x <- unique(df_I$C) %>% c(360)
+I_x <- select(df_I_wide, -c(G, I_avg, zonal_flux)) %>%
+	mutate(`360` = `0`) %>%
+	t()
 
-## Einlesen des EULUMDAT - Formates
+luminaire <- luminaire %>% 
+	mutate(
+		ICG_crosswise = interp2(G_x, C_x, I_x, G, C_crosswise),
+		ICG_endwise = interp2(G_x, C_x, I_x, G, C_endwise)
+	) %>% 
+	pivot_longer(
+		cols = ends_with("wise"),
+		names_to = c(".value", "View"),
+		names_pattern = "(.*)_(.*)"
+		) %>% 
+	rename(A_p = Ap, I_CG = ICG)
 
+luminaire %>% 
+	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>% 
+	kable() %>% 
+	kable_classic()
+```
 
+### Berechnungen für die Hintergrundleuchtdichte nach CIE 2010
 
+#### Berechnung der Wandflächen und Anzahl der Leuchten
 
+```{r}
+luminaire <- luminaire %>%
+	mutate(
+		A_wall = 2 * X_abs * H + 2 * Y_abs * H,
+		N = X_abs / S * Y_abs / S,
+		B = light_flux * N / A_wall
+		)
+luminaire %>% 
+	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>% 
+	kable() %>% 
+	kable_classic()
+```
 
+#### Geometrischer Faktor (geometric factor) for luminaires in standard array
+```{r}
+t4 <- readWorkbook("CIE-190-2010_tables.xlsx", sheet = "Table 4", startRow = 1)
+luminaire <- left_join(luminaire, t4, by = c("X_Dim", "Y_Dim")) %>% 
+	mutate(
+		zonal_flux = FCL[1] * F_GL1 + FCL[2] * F_GL2 + FCL[3] * F_GL3 + 
+			FCL[4] * F_GL4,
+		F_DF = zonal_flux / 1000,
+		F_DW = R_DLO - F_DF,
+		F_DC = R_ULO,
+		F_UWID = F_DF * `F_T,FW` + F_DW * `F_T,WW-1` + F_DC * `F_T,CW`,
+		B = 1000 * N / A_wall,
+		E_WID = F_UWID * B
+	)
+luminaire %>% 
+	filter(`Reflectance_C/W/R` == "70/50/20" & X_Dim == "2H" & Y_Dim == "4H") %>% 
+	kable() %>% 
+	kable_classic()
+```
 
+### UGR 
 
+#### Berechnung
 
+```{r}
+UGR_sum <- luminaire %>% 
+	na.omit() %>% 
+	# Calculating the sum-part before taking the sum
+	mutate(SUM = I_CG^2 /( A_p * R^2 * p^2)) %>% 
+	group_by(`Reflectance_C/W/R`, X_Dim, Y_Dim, View) %>% 
+	summarise(across(SUM, sum )) %>% 
+	ungroup()
 
+UGR <- luminaire %>% 
+	select(`Reflectance_C/W/R`, X_Dim, Y_Dim, E_WID) %>% 
+	distinct() %>% 
+	right_join(UGR_sum, by = c("Reflectance_C/W/R", "X_Dim", "Y_Dim")) %>% 
+	mutate(UGR = 8 * log10(SUM / 4) - 8 * log10 (E_WID / pi)) %>% 
+	mutate(UGR = round(UGR, 1)) %>% 
+	arrange(View) %>% 
+	select(-c(E_WID, SUM))
 
+UGR %>% 
+	kable() %>% 
+	kable_classic()
 
+```
 
+#### Erstellung der Tabelle 
 
+```{r}
+reflectance_names <- unique(UGR$`Reflectance_C/W/R`) %>% as.character()
 
-<!-- # Berechnung des UGR-Wertes -->
+UGR_table <- UGR %>% 
+	pivot_wider(
+		names_from = c(View, `Reflectance_C/W/R`), 
+		names_glue = "{.value}_{View}_{`Reflectance_C/W/R`}",
+		values_from = UGR
+		)
 
-<!-- ```{r} -->
-
-<!-- test <- luminaire %>%  -->
-<!-- 	na.omit() -->
-<!-- I_CG <- test$I_obs_cross -->
-<!-- A <- test$A_cross -->
-<!-- r <- test$R -->
-<!-- p <- test$p -->
-
-
-
-<!-- R_UG_cross <- 8 * log10( 0.25 * sum( I_CG^2 / (A * r^2 * p^2) ) ) -  -->
-<!-- 	8 * log10(E_WID / pi) -->
-<!-- R_UG_cross -->
-
-<!-- I_CG <- test$I_obs_end -->
-<!-- A <- test$A_end -->
-<!-- r <- test$R -->
-<!-- p <- test$p -->
-
-
-
-<!-- R_UG_end <- 8 * log10( 0.25 * sum( I_CG^2 / (A * r^2 * p^2) ) ) -  -->
-<!-- 	8 * log10(E_WID / pi) -->
-<!-- R_UG_end -->
-<!-- ``` -->
-
-
-
-<!-- # Berechnung für die Hintergrundleuchtdichte -->
-
-
-<!-- ## Berechnung der Geometric Multiplier und der Direkt-Lichtstromanteil der Nutzoberfläche -->
-
-<!-- 1. Aufstellung der DS - Matrix -->
-<!-- ```{r} -->
-<!-- D <- 1 / (2*pi) * c(1,  2,  3,   4,  -->
-<!-- 										0, -2, -6, -12, -->
-<!-- 										0,  0,  3,  12, -->
-<!-- 										0,  0,  0,  -4) %>%  -->
-<!-- 	matrix(nrow = 4, ncol = 4, byrow = TRUE) -->
-<!-- S <- c(1/4, 1/16,  1/64,  1/256, -->
-<!-- 			 1/2, 1/ 4,  1/ 8,  1/ 16, -->
-<!-- 			 3/4, 9/16, 27/64, 81/256, -->
-<!-- 			   1,    1,     1,      1) %>%  -->
-<!-- 	matrix(nrow = 4, ncol = 4, byrow = TRUE) -->
-<!-- # Fehler bei der Angabe der obigen Matrizen, daher wird die DS Matrix direkt eingefügt -->
-<!-- DS <- 1 / (6*pi) * c(1/4, 1/16,  1/64,  1/256, -->
-<!-- 										 1/2, 1/ 4,  1/ 8,  1/ 16, -->
-<!-- 										 3/4, 9/16, 27/64, 81/256, -->
-<!-- 										   1,    1,     1,      1) %>%  -->
-<!-- 	matrix(nrow = 4, ncol = 4, byrow = TRUE) -->
-<!-- DS * 6 * pi -->
-<!-- ``` -->
-
-<!-- 2. Berechnung der G-Faktoren der jeweiligen Teilfläche der k-ten Leuchte mit den jeweiligen Längen/Breiten -->
-<!-- ```{r} -->
-<!-- x <- luminaire$X / luminaire$H -->
-<!-- y <- luminaire$Y / luminaire$H -->
-<!-- G1 <- 1   * atan(x * y / sqrt(1 + x^2 + y^2)) -->
-<!-- G2 <- 1/2 * x / sqrt(1 + x^2) * atan(y / sqrt(1 + x^2)) + -->
-<!-- 	          y / sqrt(1 + y^2) * atan(x / sqrt(1 + y^2)) -->
-<!-- G3 <- 1/3 * G1 + (1 / (1 + x^2) + 1 / (1 + y^2)) * x * y / sqrt(1 + x^2 + y^2) -->
-<!-- G4 <- 1/4 * 2 * G2 + x / (2 * sqrt(1 + x^2)^3) * atan(y / sqrt(1 + x^2)) + -->
-<!-- 										 y / (2 * sqrt(1 + y^2)^3) * atan(x / sqrt(1 + y^2)) +  -->
-<!-- 	1/2 * (1 / (1 + x^2) + 1 / (1 + y^2)) * x * y / (1 + x^2 + y^2) -->
-<!-- ``` -->
-
-
-
-<!-- ## Berechnung der Hintergrundleuchtdichte nach CIE 190-2010 -->
-
-<!-- ```{r} -->
-<!-- FCL <- FCL * 1000 / light_flux -->
-
-<!-- ``` -->
-
-
-
-<!-- ```{r} -->
-<!-- header <- lines[1:42] -->
-<!-- data <- lines[-(1:42)] -->
-
-<!-- # Art der Symmetrie Isym -->
-<!-- Isym <- header[3] -->
-<!-- # Anzahl Mc der C-Ebenen zwischen 0° und 360° -->
-<!-- Mc <- header[4] %>% as.numeric() -->
-<!-- # Winkelintervall Dc zwischen den C-Ebenen -->
-<!-- #   (Dc = 0 für nicht-äquidistante C-Ebenen) -->
-<!-- Dc <- header[5] %>% as.numeric() -->
-<!-- # Anzahl Ng der Lichtstärkewerte in jeder C-Ebene -->
-<!-- Ng <- header[6] %>% as.numeric() -->
-<!-- # Winkelintervall Dg <- zwischen den Lichtstärke werten einer C-Ebene -->
-<!-- #   (Dg = 0 für nicht-äquidistante Lichtstärkewerte in einer C-Ebene) -->
-<!-- Dg <- header[7] %>% as.numeric() -->
-
-<!-- flux_all <- header[29] %>% as.numeric() -->
-<!-- power <- header[32] %>% as.numeric() -->
-
-<!-- C_angle <- data[1:Mc] %>% as.numeric() -->
-<!-- data <- data[-(1:Mc)] -->
-<!-- G_angle <- data[1:Ng] %>% as.numeric() -->
-<!-- data <- data[-(1:Ng)] -->
-
-<!-- switch( -->
-<!-- 	Isym,  -->
-<!-- 	`0` = Icol <- Mc, -->
-<!-- 	`1` = Icol <- 1, -->
-<!-- 	`2` = Icol <- Mc / 2 + 1, -->
-<!-- 	`3` = Icol <- Mc / 2 + 1, -->
-<!-- 	`4` = Icol <- Mc / 4 + 1 -->
-<!-- ) -->
-
-<!-- df_I <- data.frame(gamma = numeric(), C = numeric(), I = numeric()) -->
-<!-- data_sub <- data -->
-<!-- for (angle in C_angle[1:Icol]) { -->
-<!-- 	gamma <- G_angle -->
-<!-- 	C <- if_else(Isym != "3", angle, angle + 90) -->
-<!-- 	I <- data_sub[1:Ng] %>% as.numeric() -->
-<!-- 	data_sub <- data_sub[-(1:Ng)] -->
-<!-- 	df_I <- data.frame(gamma, C, I) %>%  -->
-<!-- 		bind_rows(df_I, .) -->
-<!-- } -->
-
-<!-- ``` -->
-
-<!-- # data symmetry transformations -->
-
-<!-- ```{r} -->
-<!-- df_sub <- df_I -->
-<!-- switch( -->
-<!-- 	Isym, -->
-<!-- 	`0` = { -->
-<!-- 		print(paste("keine Symmetrie =", Isym)) -->
-<!-- 	}, -->
-<!-- 	`1` = { -->
-<!-- 		print(paste("Symmetrie zur vertikalen Achse =", Isym)) -->
-<!-- 		for (angle in seq(Dc, 360, Dc)) { -->
-<!-- 			df_plot <- df_sub %>%  -->
-<!-- 				mutate(C = angle) %>%  -->
-<!-- 				bind_rows(df_I, .) -->
-<!-- 		} -->
-<!-- 	}, -->
-<!-- 	`2` = { -->
-<!-- 		print(paste("Symmetrie zur Ebene C0-C180 =", Isym)) -->
-<!-- 		df_plot <- df_sub %>%  -->
-<!-- 			mutate(C = 360 - C) %>%  -->
-<!-- 			bind_rows(df_I) %>%  -->
-<!-- 			arrange(C) %>%  -->
-<!-- 			filter(C != 360) -->
-<!-- 	}, -->
-<!-- 	`3` = { -->
-<!-- 		print(paste("Symmetrie zur Ebene C90-C270 =", Isym)) -->
-<!-- 		df_plot <- df_sub %>%  -->
-<!-- 			mutate( -->
-<!-- 				C = case_when( -->
-<!-- 					C <= 180 ~ 180 - C, -->
-<!-- 					C >  180 ~ 270 + (270 - C) -->
-<!-- 				) -->
-<!-- 			) %>% -->
-<!-- 			bind_rows(df_I) %>% -->
-<!-- 			arrange(C) -->
-<!-- 	}, -->
-<!-- 	`4` = { -->
-<!-- 		print(paste("Symmetrie zu den Ebenen C0-C180 und C90-C270 =", Isym)) -->
-<!-- 		df_sub <- df_sub %>%  -->
-<!-- 			mutate(C = 180 - C) %>% -->
-<!-- 			bind_rows(df_I) %>% -->
-<!-- 			arrange(C) -->
-<!-- 		df_plot <- df_sub %>%  -->
-<!-- 			mutate(C = 360 - C) %>%  -->
-<!-- 			bind_rows(df_sub) %>%  -->
-<!-- 			arrange(C) %>%  -->
-<!-- 			filter(C != 360) -->
-<!-- 	} -->
-<!-- ) -->
-<!-- ``` -->
-
-<!-- # plotting light distribution -->
-
-<!-- ## preparing data -->
-
-<!-- ```{r} -->
-<!-- dat <- df_plot %>%  -->
-<!-- 	filter(C == 0 | C == 90 | C == 180 | C == 270) %>%  -->
-<!-- 	mutate( -->
-<!-- 		G = case_when( -->
-<!-- 			C == 0   | C == 90  ~ 360 - G, # transfrom for plotting -->
-<!-- 			C == 180 | C == 270 ~ G,  -->
-<!-- 		), -->
-<!-- 		C = case_when( -->
-<!-- 			C == 0  | C == 180 ~ "C0/180", -->
-<!-- 			C == 90 | C == 270 ~ "C90/270" -->
-<!-- 		), -->
-<!-- 		C = factor(C, levels = c("C0/180", "C90/270")) -->
-<!-- 	) -->
-<!-- ``` -->
-
-<!-- ## plot 1 -->
-
-<!-- ```{r} -->
-<!-- pracht_green <- rgb(188, 207, 3, max = 255) -->
-<!-- palette1 <- rep(pracht_green, times = length(unique(df_plot$C))) -->
-
-<!-- g2 <- ggplot(dat, aes(x = G, y = I, linetype = C)) + -->
-<!-- 	geom_line(color = pracht_green, size = 1) + -->
-<!-- 	theme_light() +  -->
-<!-- 	scale_x_continuous( -->
-<!-- 		limits = c(0, 360), -->
-<!-- 		breaks = seq(0, 330, 30), -->
-<!-- 		labels = c("0", "30", "60", "90", "120", "150", "180", "150", "120", "90", -->
-<!-- 							 "60", "30") -->
-<!-- 	) + -->
-<!-- 	coord_polar(start = pi) + -->
-<!-- 	theme( -->
-<!-- 		legend.title = element_blank(), -->
-<!-- 		legend.position = "top", -->
-<!-- 		legend.box.spacing = unit(0, "mm") -->
-<!-- 	) + -->
-<!-- 	labs( -->
-<!-- 		x = expression(gamma ~ "in °"), -->
-<!-- 		y = expression(paste("I in cd/1000 lm")) -->
-<!-- 	) -->
-
-<!-- print(g2) -->
-<!-- ``` -->
-
-
-
+kbl(
+	UGR_table, 
+	align = c("r"),
+	col.names = c("X", "Y", reflectance_names, reflectance_names)
+	) %>% 
+	kable_paper() %>% 
+	add_header_above(c(
+		"Room Dimensions" = 2,
+		"Reflectances (Ceiling/Wall/Reference plane)" = 5,
+		"Reflectances (Ceiling/Wall/Reference plane)" = 5
+		)) %>%
+	add_header_above(c(
+		" " = 2,
+		"Viewed crosswise" = 5,
+		"Viewed endwise" = 5
+		)) %>%
+	row_spec(c(6, 12, 16), extra_css = "border-bottom: 1px solid")
+```
 

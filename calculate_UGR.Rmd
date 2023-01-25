@@ -199,8 +199,10 @@ F_GL2 <- F_GL$F_GL2
 F_GL3 <- F_GL$F_GL3
 F_GL4 <- F_GL$F_GL4
 
-flux_zL <- (flux_zL1 * F_GL1 + flux_zL2 * F_GL2 + 
-						flux_zL3 * F_GL3 + flux_zL4 * F_GL4) %>% round(2)
+flux_zL <- (
+	flux_zL1 * F_GL1 + flux_zL2 * F_GL2 + flux_zL3 * F_GL3 + flux_zL4 * F_GL4
+	) %>% 
+	round(2)
 
 F_DF <- (flux_zL / flux_0) %>% round(2)
 F_DW <- R_DLO - F_DF
@@ -216,15 +218,18 @@ F_T <- filter(t5, `Reflectance_C/W/R` == reflectance & X_Dim == X & Y_Dim == Y)
 `F_T,WW-1` <- F_T$`F_T,WW-1`
 `F_T,CW` <- F_T$`F_T,CW`
 
-F_UWID <- (F_DF * `F_T,FW` + F_DW * `F_T,WW-1` + F_DC * `F_T,CW`) %>% round(4)
+F_UWID <- (F_DF * `F_T,FW` + F_DW * `F_T,WW-1` + F_DC * `F_T,CW`) %>% 
+	round(4)
 ```
 
 6. Calculate $E_\text{WID}$
 
 ```{r}
-B <- filter(t3, X_Dim == X & Y_Dim == Y) %>% pull(B)
+B <- filter(t3, X_Dim == X & Y_Dim == Y) %>% 
+	pull(B)
 
-E_WID <- (F_UWID * B) %>% round(2)
+E_WID <- (F_UWID * B) %>% 
+	round(2)
 ```
 
 ## Calculation of uncorrected UGR Value
@@ -236,12 +241,17 @@ E_WID <- (F_UWID * B) %>% round(2)
 gamma_x <- df_I$gamma
 df <- select(df_I, -(gamma)) %>% 
 	mutate(C360 = C0)
-C_x <- colnames(df) %>% sub("C", "", .) %>% as.numeric()
-I_x <- data.matrix(df) %>% t()
+C_x <- colnames(df) %>% 
+	sub("C", "", .) %>% 
+	as.numeric()
+I_x <- data.matrix(df) %>% 
+	t()
 
 # for linear intepolating the luminous intensity data
-y_R_H <- stringr::str_sub(Y, 1, nchar(Y) - 1) %>% as.numeric() - 0.5
-x_T_H <- stringr::str_sub(X, 1, nchar(X) - 1) %>% as.numeric() / 2 - 0.5
+y_R_H <- stringr::str_sub(Y, 1, nchar(Y) - 1) %>% 
+	as.numeric() - 0.5
+x_T_H <- stringr::str_sub(X, 1, nchar(X) - 1) %>% 
+	as.numeric() / 2 - 0.5
 
 df_sub <- filter(t2, `x_T/H` <= x_T_H)
 
@@ -473,7 +483,7 @@ kbl(
 
 ## extracting luminous intensity from ldt.-file (parabolic)
 ```{r}
-file <- "lvk/0_CIE-117-1995_4_Parabolic.ldt"
+file <- "lvk/0_CIE-117-1995_D1_Parabolic.ldt"
 
 lines <- readLines(file)
 header <- lines[1:42]
@@ -824,7 +834,6 @@ for (i in seq(nrow(UGR_table))) {
 		round(1)
 	UGR_table$UGR_end[i] <- UGR_end
 }
-
 
 ```
 
