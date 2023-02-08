@@ -1,27 +1,5 @@
-### EXTRACT LDT INFORMATIONS ----
-
-# 1.0 LIBRARIES ----
-library(tidyverse)
-library(svglite)
-library(furrr)
-
-# 2.0 IMPORT LDT-DATA ----
-
-# 2.1 FILE IMPORT ----
-files_path <- list.files(
-	path        = "00_data/ldt_test/", 
-	pattern     = c(".ldt$"), 
-	full.names  = TRUE, 
-	recursive   = TRUE,
-	ignore.case = TRUE
-)
-
-# Select one file to test function
-file <- files_path[11]
-
-# 2.2 DATA EXTRACTION ----
-
-extract_c_values <- function(.C, .n, .gamma, .Ng, .data) {
+extract_c_values <-
+function(.C, .n, .gamma, .Ng, .data) {
 	
 	I   <- .data[((.n - 1) * .Ng + 1):(.n * .Ng)] %>% as.numeric()
 	tbl <- tibble(.C, .gamma, I) %>% 
@@ -29,10 +7,8 @@ extract_c_values <- function(.C, .n, .gamma, .Ng, .data) {
 	
 	return(tbl)
 }
-
-.ldt <- files_path[8]
-
-extract_ldt_data <- function(.ldt) {
+extract_ldt_data <-
+function(.ldt) {
 	
 	lines    <- readLines(.ldt)
 	header   <- lines[1:42]
@@ -179,11 +155,8 @@ extract_ldt_data <- function(.ldt) {
 	return(data_raw_tbl)
 	
 }
-
-
-# * Plotting polar graph ----
-
-prepare_polar_data <- function(.data) {
+prepare_polar_data <-
+function(.data) {
 	
 	.data %>% 
 		
@@ -203,8 +176,8 @@ prepare_polar_data <- function(.data) {
 		rename(gamma_plot = gamma)
 	
 }
-
-plot_polar_graph <- function(.data, .line_size = 1.5, .title = filename, .line_color = "#BCCF03") {
+plot_polar_graph <-
+function(.data, .line_size = 1.5, .title = filename, .line_color = "#BCCF03") {
 	
 	# Plot
 	g <- ggplot(.data, aes(x = gamma_plot, y = I, linetype = C)) +
@@ -238,20 +211,8 @@ plot_polar_graph <- function(.data, .line_size = 1.5, .title = filename, .line_c
 	return(g)
 	
 }
-
-# * Perform functions ----
-
-ldt <- file
-ldt <- files_path[8]
-
-filename <- basename(ldt) %>% tools::file_path_sans_ext()
-
-extract_ldt_data(ldt) %>% 
-	prepare_polar_data() %>% 
-	plot_polar_graph(.title = filename)
-
-
-ldt2ggplot <- function(.ldt_filepath, .filename) {
+ldt2ggplot <-
+function(.ldt_filepath, .filename) {
 	
 	name <- tools::file_path_sans_ext(.filename)
 	
@@ -262,34 +223,3 @@ ldt2ggplot <- function(.ldt_filepath, .filename) {
 	return(g)
 	
 }
-
-# * Iterate over filepaths ----
-
-future::plan(multisession)
-
-tictoc::tic()
-files_tbl <-  tibble(files_path) %>% 
-	mutate(filename = basename(files_path)) %>% 
-	mutate(g    = map2(files_path, filename, ldt2ggplot))
-tictoc::toc()
-
-tictoc::tic()
-files_tbl <-  tibble(files_path) %>% 
-	mutate(filename = basename(files_path)) %>% 
-	mutate(g    = future_map2(files_path, filename, ldt2ggplot))
-tictoc::toc()
-
-files_tbl
-
-
-# 2.3 CREATE SVG-FILES ----
-
-svglite("test_svglite.svg")
-extract_ldt_data(ldt) %>% 
-	prepare_polar_data() %>% 
-	plot_polar_graph()
-dev.off()
-
-
-# 3.0 DUMP FUNCTIONS ----
-dump(c("extract_c_values", "extract_ldt_data", "prepare_polar_data", "plot_polar_graph", "ldt2ggplot"), file = "00_scripts/ldt2svg.R")

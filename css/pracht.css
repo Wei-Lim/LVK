@@ -1,0 +1,139 @@
+/* FONTS */
+@font-face {
+    font-family: "NexaBlack";
+    src: url("fonts/Nexa_Black.otf") format('otf');
+}
+
+@font-face {
+    font-family: "OpenSans";
+    src: url("fonts/OpenSans-CondLight.ttf") format('ttf');
+}
+
+@font-face {
+    font-family: "OpenSans";
+    src: url("fonts/OpenSans-Bold.ttf") format('ttf');
+    font-weight: bold
+}
+
+h1, h2, h3, h4, h5, h6, .h1, .h2, .h3, .h4, .h5, .h6 {
+    font-family: "OpenSans", sans-serif;
+    color: #100C08;
+    font-weight: bold;
+}
+
+body {
+    font-family: 'OpenSans', sans-serif;
+    color: #100C08;
+    background: #adadad;
+}
+
+
+/* NAVBAR */
+.navbar-inverse {
+    background-color: #100C08;
+    border-color: #adadad;
+}
+
+.navbar-inverse .navbar-brand {
+    font-family: 'NexaBlack', sans-serif;
+    color: #bccf01;
+    text-transform: uppercase;
+    font-weight: bold;
+}
+
+.navbar-logo {
+    margin-top: 1px;
+    margin-bottom: 1px;
+    margin-right: 10px;
+    width: 70px;
+}
+
+/* SIDEBAR */
+.section.sidebar {
+    background-color: #fff;
+    border-color: #adadad;
+    border-top: 10px solid #adadad;
+    border-bottom: 10px solid #adadad;
+    border-left: 10px solid #adadad;
+    border-right: 1px solid #adadad;
+}
+
+
+/* CHART-WRAPPER */
+.chart-wrapper, .nav-tabs-custom, .sbframe-commentary {
+    border: 1px solid #adadad;
+    border-radius: 0px;
+}
+
+/* CHART-TITLE */
+.chart-title {
+    border-bottom: 1px solid #7F7F7F;
+    color: #100c08;
+}
+
+
+/* TABLE */
+table.dataTable.stripe tbody tr.odd,table.dataTable.display tbody tr.odd {
+    background-color: #000
+}
+
+/* VALUE BOX*/
+.bg-success {
+    background-color: #bccf01;
+}
+
+/* SLIDER BAR */
+.irs--shiny .irs-from, .irs--shiny .irs-to, .irs--shiny .irs-single {
+    background-color: #bccf01;
+}
+
+.irs--shiny .irs-bar {
+    border-top: 1px solid #bccf01;
+    border-bottom: 1px solid #bccf01;
+    background: #bccf01;
+}
+
+/* BUTTON DEFAULT */
+.btn-default {
+    color: #bccf01;
+    background-color: #222222;
+    border-color: #222222
+}
+
+.btn-default:focus,.btn-default.focus {
+    color: #bccf01;
+    background-color: #090909;
+    border-color: #000000
+}
+
+.btn-default:hover {
+    color: #bccf01;
+    background-color: #090909;
+    border-color: #040404
+}
+
+.btn-default:active,.btn-default.active,.open>.dropdown-toggle.btn-default {
+    color: #bccf01;
+    background-color: #090909;
+    border-color: #040404
+}
+
+.btn-default:active:hover,.btn-default.active:hover,.open>.dropdown-toggle.btn-default:hover,.btn-default:active:focus,.btn-default.active:focus,.open>.dropdown-toggle.btn-default:focus,.btn-default:active.focus,.btn-default.active.focus,.open>.dropdown-toggle.btn-default.focus {
+    color: #bccf01;
+    background-color: #000000;
+    border-color: #000000
+}
+
+.btn-default:active,.btn-default.active,.open>.dropdown-toggle.btn-default {
+    background-image: none
+}
+
+.btn-default.disabled:hover,.btn-default[disabled]:hover,fieldset[disabled] .btn-default:hover,.btn-default.disabled:focus,.btn-default[disabled]:focus,fieldset[disabled] .btn-default:focus,.btn-default.disabled.focus,.btn-default[disabled].focus,fieldset[disabled] .btn-default.focus {
+    background-color: #222222;
+    border-color: #222222
+}
+
+.btn-default .badge {
+    color: #222222;
+    background-color: #bccf01
+}

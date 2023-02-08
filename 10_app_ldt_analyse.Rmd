@@ -1,0 +1,126 @@
+---
+title: "LVK Analyse App by WT"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    css: css/pracht.css
+    logo: img/PIT_Logo_klein.jpg
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+options(encoding = "UTF-8")
+
+library(flexdashboard)
+library(shiny)
+library(shinyWidgets)
+library(shinyjs)
+
+# Core
+library(tidyverse)
+library(svglite)
+
+# Multicore iterations
+library(furrr)
+future::plan(multisession)
+
+# Interactive Visualizations
+library(plotly)
+
+# Source functions
+source("00_scripts/ldt2svg.R")
+
+```
+
+
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+# Input: Select a file ----
+fileInput(
+	inputId     = "files", 
+	label       = h5("LDT-Datei auswählen"),
+	multiple    = TRUE,
+	accept      = c(".ldt"),
+	buttonLabel = "Upload",
+	placeholder = "Keine Datei ausgewählt"
+)
+
+sliderInput(
+	inputId = "slider_plot",
+	label   = "Importiere LVKs",
+	min     = 0, 
+	max     = 0,
+	value   = 0,
+	step    = 1
+)
+
+
+downloadHandler(
+	filename = function() {
+		paste('resultset-', Sys.Date(), '.zip', sep='')
+	},
+	content = function(file) {
+		
+		temp_directory <- file.path(tempdir(), as.integer(Sys.time()))
+		dir.create(temp_directory)
+		
+		map2(
+			files_tbl()$g, 
+			files_tbl()$name %>% tools::file_path_sans_ext(),
+			function(x, y) {
+				file_name <- str_glue("{y}.svg")
+				svglite(file.path(temp_directory, file_name))
+				print(x)
+				dev.off()
+			}
+		)
+		
+		zip::zip(
+			zipfile = file,
+			files   = dir(temp_directory),
+			root    = temp_directory
+		)
+		
+	}
+)
+
+# Event: input$files
+files_tbl <- reactive({
+	 input$files %>%
+		tibble() %>%
+		mutate(g = future_map2(datapath, name, ldt2ggplot))
+}) %>% 
+	bindEvent(input$files)
+
+observe({
+	updateSliderInput(
+		session = session,
+		inputId = "slider_plot",
+		min     = 1,
+		max     = files_tbl() %>% nrow(),
+		value   = 1
+	)
+}) %>% 
+	bindEvent(input$files)
+
+```
+
+
+
+
+
+Row {data-height=100}
+-----------------------------------------------------------------------
+
+```{r}
+renderPlot({
+	files_tbl() %>%
+		slice(input$slider_plot) %>%
+		pull(g)
+})
+```
+
