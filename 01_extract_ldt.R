@@ -37,7 +37,7 @@ read_ldt <- function(file) {
 	header   <- lines[1:42]
 	data     <- lines[-(1:42)]
 	
-	ldt_list = list(
+	ld_list = list(
 		
 		# Filepath 
 		filepath  = file,
@@ -149,15 +149,15 @@ read_ldt <- function(file) {
 		power    = header[32] %>% as.numeric(),
 		
 		# DR - Direct ratios for room indices k = 0.6 ... 5 (for determination of luminaire numbers according to utilization factor method)
-		DR       = header[33] %>% as.numeric()
+		DR       = header[33:42] %>% as.numeric()
 	)
 	
 	
 	## * Angles definitions ----
-	Mc <- ldt_list$Mc
-	Ng <- ldt_list$Ng
-	Dc <- ldt_list$Dc
-	Isym <- ldt_list$Isym
+	Mc <- ld_list$Mc
+	Ng <- ld_list$Ng
+	Dc <- ld_list$Dc
+	Isym <- ld_list$Isym
 	
 	# Angles C (beginning with 0 degrees)
 	angle_C <- data[1:Mc] %>% as.numeric()
@@ -270,7 +270,7 @@ read_ldt <- function(file) {
 	
 	
 	# * Adding angles and luminous intensity tables to LDT-list ----
-	ldt_list <- ldt_list %>% 
+	ld_list <- ld_list %>% 
 		append(list(
 			angleC               = angle_C,
 			angleG               = angle_G,
@@ -278,7 +278,7 @@ read_ldt <- function(file) {
 			lum_int_extended_tbl = lum_int_extended_tbl
 		))
 	
-	return(ldt_list)
+	return(ld_list)
 }
 
 # * Test function ----
@@ -290,8 +290,8 @@ read_ldt(filepath[8])
 	
 
 # 2.3 Plot light distribution graph ----
-ldt_list <- read_ldt(filepath[1])
-lum_int_extended_tbl <- ldt_list$lum_int_extended_tbl
+ld_list <- read_ldt(filepath[1])
+lum_int_extended_tbl <- ld_list$lum_int_extended_tbl
 line_color <- "#BCCF03"
 line_size  <- 1.5 
 title <- "filename"
@@ -360,7 +360,7 @@ plot_light_distribution <- function(
 	
 }
 
-ldt_list$lum_int_extended_tbl %>% 
+ld_list$lum_int_extended_tbl %>% 
 	plot_light_distribution()
 
 
@@ -375,10 +375,10 @@ tictoc::tic()
 file_list <- filepath %>% future_map(read_ldt)
 tictoc::toc()
 
-ldt_list <- file_list[[1]]
+ld_list <- file_list[[1]]
 
 ld_add_light_distribution <- function(
-		ldt_list,
+		ld_list,
 		line_color = "#BCCF03", 
 		line_size  = 1.5,
 		title      = "", 
@@ -386,18 +386,18 @@ ld_add_light_distribution <- function(
 		y_lab      = expression(paste("Normierte Lichtstärke I in cd/1000 lm"))
 ) {
 	
-	lum_int_extended_tbl <- ldt_list$lum_int_extended_tbl
+	lum_int_extended_tbl <- ld_list$lum_int_extended_tbl
 	
-	ldt_list$plot <- plot_light_distribution(
+	ld_list$plot <- plot_light_distribution(
 		lum_int_extended_tbl,
 		line_color = line_color, 
 		line_size  = line_size,
-		title      = ldt_list$file_name, 
+		title      = ld_list$file_name, 
 		x_lab      = x_lab,
 		y_lab      = y_lab
 	)
 	
-	return(ldt_list)
+	return(ld_list)
 }
 
 ld_add_light_distribution(file_list[[2]])
@@ -410,33 +410,78 @@ tictoc::toc()
 file_list[[3]]$plot
 
 # 2.5 LD: Export to SVG ----
-ldt_list <- file_list[[1]]
+ld_list <- file_list[[1]]
 
-ld_export_svg <- function(ldt_list, dir_path = "00_data/export/") {
+ld_write_svg <- function(ld_list, dir_path = "00_data/export/") {
 	
-	file_name <- ldt_list$file_name
+	file_name <- ld_list$file_name
 	
 	svglite(str_c(dir_path, file_name, ".svg"))
-	print(ldt_list$plot)
+	print(ld_list$plot)
 	dev.off()
 	
 }
 
-file_list[[1]] %>% ld_export_svg()
+file_list[[1]] %>% ld_write_svg()
 
 tictoc::tic()
-map(file_list, ld_export_svg)
+map(file_list, ld_write_svg)
 tictoc::toc()
 
 tictoc::tic()
-future_map(file_list, ld_export_svg)
+future_map(file_list, ld_write_svg)
+tictoc::toc()
+
+# 2.6 LD: Write LDT ----
+ld_list <- file_list[[1]]
+
+ld_write_ldt <- function(ld_list, dir_path = "00_data/export/") {
+	
+	ld_list$file_name_ldt <- str_c(ld_list$file_name, ".ldt")
+	
+	# Select ldt header features
+	ldt_header <- c(
+		"company", "Ityp", "Isym", "Mc", "Dc", "Ng", "Dg", 
+		"report_no", "name_luminaire", "no_luminaire", "file_name_ldt", "date_user", 
+		"length", "width", "height", 
+		"length_lum", "width_lum", "height_lum_C0", "height_lum_C90", "height_lum_C180", "height_lum_C270", 
+		"DFF", "LORL", "cf", "tilt", 
+		"lamp_standard_sets_no", "lamp_no", "lamp_type", 
+		"lum_flux", "cct", "cri", "power"
+	)
+	
+	# Convert to character array for writing lines
+	ldt_export_c <- c(
+		ld_list[ldt_header] %>% as.character(),
+		ld_list$DR,
+		ld_list$angleC,
+		ld_list$angleG,
+		ld_list$lum_int_tbl %>% 
+			pivot_longer(-gamma, "C", names_prefix = "C", names_transform = as.numeric, values_to = "I") %>% 
+			arrange(C) %>% 
+			pull(I)
+	)
+	
+	writeLines(ldt_export_c, str_c("00_data/export/", ld_list$file_name, ".ldt"))
+	
+	return(invisible(NULL))
+	
+}
+
+tictoc::tic()
+map(file_list, ld_write_ldt)
+tictoc::toc()
+
+tictoc::tic()
+future_map(file_list, ld_write_ldt)
 tictoc::toc()
 
 
-# 2.6 Write ldt-file ----
 
-# 2.7 Write ies-file ----
+# 2.7 LD: Write IES ----
 
+
+# 2.8 LD: Update LD list ----
 
 # 3.0 DUMP FUNCTIONS ----
 dump(
@@ -445,7 +490,7 @@ dump(
 		"read_ldt", 
 		"plot_light_distribution",
 		"ld_add_light_distribution",
-		"ld_export_svg"
+		"ld_write_svg"
 	), 
 	file = "00_scripts/light_distribution.R"
 )
