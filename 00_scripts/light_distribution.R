@@ -1,36 +1,13 @@
-### EXTRACT LDT INFORMATIONS ----
-
-# LIBRARIES ----
-library(tidyverse)
-library(svglite)
-library(furrr)
-
-# 1.FILES IMPORT ----
-filepath <- list.files(
-	path        = "00_data/ldt_test/", 
-	pattern     = c(".ldt$"), 
-	full.names  = TRUE, 
-	recursive   = TRUE,
-	ignore.case = TRUE
-)
-
-
-# Select one file to test function
-file <- filepath[6]
-
-# 2 FUNCTIONS ----
-
-# 2.1 Extract luminous intensity ----
-extract_lum_intensity <- function(C, i, gamma, Ng, data) {
+extract_lum_intensity <-
+function(C, i, gamma, Ng, data) {
 	
 	I   <- data[((i - 1) * Ng + 1):(i * Ng)] %>% as.numeric()
 	tbl <- tibble(C, gamma, I)
 	
 	return(tbl)
 }
-
-# 2.2 Read LDT data ----
-read_ldt <- function(file) {
+read_ldt <-
+function(file) {
 	
 	# Read txt-lines 
 	lines    <- readLines(file)
@@ -280,23 +257,8 @@ read_ldt <- function(file) {
 	
 	return(ldt_list)
 }
-
-# * Test function ----
-read_ldt(filepath[1])
-read_ldt(filepath[4])
-read_ldt(filepath[6])
-read_ldt(filepath[7])
-read_ldt(filepath[8])
-	
-
-# 2.3 Plot light distribution graph ----
-ldt_list <- read_ldt(filepath[1])
-lum_int_extended_tbl <- ldt_list$lum_int_extended_tbl
-line_color <- "#BCCF03"
-line_size  <- 1.5 
-title <- "filename"
-
-plot_light_distribution <- function(
+plot_light_distribution <-
+function(
 		lum_int_extended_tbl, 
 		line_color = "#BCCF03", 
 		line_size = 1.5,
@@ -359,25 +321,8 @@ plot_light_distribution <- function(
 		)
 	
 }
-
-ldt_list$lum_int_extended_tbl %>% 
-	plot_light_distribution()
-
-
-# 2.4 LD: Add plot to list ----
-
-future("multisession")
-tictoc::tic()
-file_list <- filepath %>% map(read_ldt)
-tictoc::toc()
-
-tictoc::tic()
-file_list <- filepath %>% future_map(read_ldt)
-tictoc::toc()
-
-ldt_list <- file_list[[1]]
-
-ld_add_light_distribution <- function(
+ld_add_light_distribution <-
+function(
 		ldt_list,
 		line_color = "#BCCF03", 
 		line_size  = 1.5,
@@ -399,20 +344,8 @@ ld_add_light_distribution <- function(
 	
 	return(ldt_list)
 }
-
-ld_add_light_distribution(file_list[[2]])
-
-
-tictoc::tic()
-file_list <- map(file_list, ld_add_light_distribution, line_color = "#000000")
-tictoc::toc()
-
-file_list[[3]]$plot
-
-# 2.5 LD: Export to SVG ----
-ldt_list <- file_list[[1]]
-
-ld_export_svg <- function(ldt_list, dir_path = "00_data/export/") {
+ld_export_svg <-
+function(ldt_list, dir_path = "00_data/export/") {
 	
 	file_name <- ldt_list$file_name
 	
@@ -421,31 +354,3 @@ ld_export_svg <- function(ldt_list, dir_path = "00_data/export/") {
 	dev.off()
 	
 }
-
-file_list[[1]] %>% ld_export_svg()
-
-tictoc::tic()
-map(file_list, ld_export_svg)
-tictoc::toc()
-
-tictoc::tic()
-future_map(file_list, ld_export_svg)
-tictoc::toc()
-
-
-# 2.6 Write ldt-file ----
-
-# 2.7 Write ies-file ----
-
-
-# 3.0 DUMP FUNCTIONS ----
-dump(
-	c(
-		"extract_lum_intensity", 
-		"read_ldt", 
-		"plot_light_distribution",
-		"ld_add_light_distribution",
-		"ld_export_svg"
-	), 
-	file = "00_scripts/light_distribution.R"
-)
