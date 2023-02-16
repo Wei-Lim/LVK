@@ -2,7 +2,7 @@ extract_lum_intensity <-
 function(C, i, gamma, Ng, data) {
 	
 	I   <- data[((i - 1) * Ng + 1):(i * Ng)] %>% as.numeric()
-	tbl <- tibble(C, gamma, I)
+	tbl <- tibble::tibble(C, gamma, I)
 	
 	return(tbl)
 }
@@ -14,9 +14,9 @@ function(file) {
 	header   <- lines[1:42]
 	data     <- lines[-(1:42)]
 	
-	ldt_list = list(
+	ld_list = list(
 		
-		# Filepath 
+		## Filepath definitions
 		filepath  = file,
 		file_name = basename(file) %>% tools::file_path_sans_ext(),
 		
@@ -51,10 +51,10 @@ function(file) {
 		report_no      = header[8],
 		
 		# Luminaire name
-		name_luminaire = header[9],
+		luminaire_name = header[9],
 		
 		# Luminaire number
-		no_luminaire   = header[10],
+		luminaire_no   = header[10],
 		
 		# File name
 		file_name_ldt  = header[11],
@@ -126,15 +126,15 @@ function(file) {
 		power    = header[32] %>% as.numeric(),
 		
 		# DR - Direct ratios for room indices k = 0.6 ... 5 (for determination of luminaire numbers according to utilization factor method)
-		DR       = header[33] %>% as.numeric()
+		DR       = header[33:42] %>% as.numeric()
 	)
 	
 	
 	## * Angles definitions ----
-	Mc <- ldt_list$Mc
-	Ng <- ldt_list$Ng
-	Dc <- ldt_list$Dc
-	Isym <- ldt_list$Isym
+	Mc <- ld_list$Mc
+	Ng <- ld_list$Ng
+	Dc <- ld_list$Dc
+	Isym <- ld_list$Isym
 	
 	# Angles C (beginning with 0 degrees)
 	angle_C <- data[1:Mc] %>% as.numeric()
@@ -152,44 +152,44 @@ function(file) {
 	   # 0 - no symmetry
 	   `0` = {
 		   	C     <- seq(0, 360 - Dc, Dc)
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   },
 	   
 	   # 1 - symmetry about the vertical axis
 	   `1` = {
 		   	C     <- 0
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   },
 	   
 	   # 2 - symmetry to plane C0-C180
 	   `2` = {
 		   	C     <- seq(0, 180, Dc)
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   },
 	   
 	   # 3 - symmetry to plane C90-C270
 	   `3` = {
 		   	C     <- seq(90, 270, Dc)
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   },
 	   
 	   # 4 - symmetry to plane C0-C180 and to plane C90-C270
 	   `4` = {
 		   	C     <- seq( 0,  90, Dc)
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   }
 	)
 	
 	# Luminous intensity distribution (cd/1000 lumens)
 	lum_int_tbl <- c_tbl %>% 
-		mutate(tbl = future_map2(C, i, extract_lum_intensity, gamma = angle_G, Ng = Ng, data = data)) %>% 
-		select(-C, -i) %>% 
-		unnest(tbl) %>% 
-		pivot_wider(names_from = C, names_prefix = "C", values_from = I)
+		dplyr::mutate(tbl = future_map2(C, i, extract_lum_intensity, gamma = angle_G, Ng = Ng, data = data)) %>% 
+		dplyr::select(-C, -i) %>% 
+		tidyr::unnest(tbl) %>% 
+		tidyr::pivot_wider(names_from = C, names_prefix = "C", values_from = I)
 	
 	## * Extend luminous intensity data for plotting and calculating ----
 	tbl <- lum_int_tbl %>% 
-		pivot_longer(-gamma, "C", names_prefix = "C", names_transform = as.numeric, values_to = "I")
+		tidyr::pivot_longer(-gamma, "C", names_prefix = "C", names_transform = as.numeric, values_to = "I")
 	
 	switch(
 		Isym, 
@@ -199,63 +199,74 @@ function(file) {
 		
 		# 1 - symmetry about the vertical axis
 		`1` = lum_int_extended_tbl <- tbl %>% 
-			bind_rows( 
-				tbl %>% mutate(C = 180) 
+			dplyr::bind_rows( 
+				tbl %>% dplyr::mutate(C = 180) 
 			),
 		
 		# 2 - symmetry to plane C0-C180
 		`2` = lum_int_extended_tbl <- tbl %>% 
-			bind_rows( 
+			dplyr::bind_rows( 
 				tbl %>% 
-					mutate(C = rev(C) + 180) %>%
-					filter(C != 180, C != 360)
+					dplyr::mutate(C = rev(C) + 180) %>%
+					dplyr::filter(C != 180, C != 360)
 			) %>% 
-			arrange(C),
+			dplyr::arrange(C),
 		
 		# 3 - symmetry to plane C90-C270
 		`3` = lum_int_extended_tbl <- tbl %>% 
-			bind_rows(
+			dplyr::bind_rows(
 				tbl %>% 
-					mutate(C = rev(C + 180) ) %>% 
-					mutate(C = if_else(C >= 360, C - 360, C)) %>% 
-					filter(C != 90, C != 270)
+					dplyr::mutate(C = rev(C + 180) ) %>% 
+					dplyr::mutate(C = if_else(C >= 360, C - 360, C)) %>% 
+					dplyr::filter(C != 90, C != 270)
 			) %>% 
-			arrange(C),
+			dplyr::arrange(C),
 		
 		# 4 - symmetry to plane C0-C180 and to plane C90-C270
 		`4` = {
 			tbl2 <- tbl %>% 
-				bind_rows(
+				dplyr::bind_rows(
 					tbl %>% 
-						mutate(C = rev(C + 90)) %>% 
-						filter(C != 90)
+						dplyr::mutate(C = rev(C + 90)) %>% 
+						dplyr::filter(C != 90)
 				) %>% 
-				arrange(C) 
+				dplyr::arrange(C) 
 			
 			lum_int_extended_tbl <- tbl2 %>% 
-				bind_rows(
+				dplyr::bind_rows(
 					tbl2 %>% 
-						mutate(C = rev(C) + 180) %>% 
-						filter(C != 180, C != 360)
+						dplyr::mutate(C = rev(C) + 180) %>% 
+						dplyr::filter(C != 180, C != 360)
 				) %>% 
-				arrange(C)
+				dplyr::arrange(C)
 		}
 	)
 	
 	lum_int_extended_tbl <- lum_int_extended_tbl %>% 
-		pivot_wider(names_from = C, names_prefix = "C", values_from = I) 
+		tidyr::pivot_wider(names_from = C, names_prefix = "C", values_from = I) 
 	
 	
-	# * Adding angles and luminous intensity tables to LDT-list ----
-	ldt_list <- ldt_list %>% 
+	# * Appending angles and luminous intensity tables to LDT-list ----
+	ld_list <- ld_list %>% 
 		append(list(
+			
 			angleC               = angle_C,
 			angleG               = angle_G,
 			lum_int_tbl          = lum_int_tbl,
-			lum_int_extended_tbl = lum_int_extended_tbl
+			lum_int_extended_tbl = lum_int_extended_tbl,
+			
+			## IES additional definitions
+			# Photometric testing laboratory
+			test_lab = "-",
+			
+			# Photometry type: 1: C, 2: B, 3: C
+			photometry_type = "1",
+			
+			# ballast factor
+			ballast_factor = 1
 		))
 	
-	return(ldt_list)
+	return(ld_list)
 }
 plot_light_distribution <-
 function(
@@ -323,7 +334,7 @@ function(
 }
 ld_add_light_distribution <-
 function(
-		ldt_list,
+		ld_list,
 		line_color = "#BCCF03", 
 		line_size  = 1.5,
 		title      = "", 
@@ -331,26 +342,26 @@ function(
 		y_lab      = expression(paste("Normierte Lichtstärke I in cd/1000 lm"))
 ) {
 	
-	lum_int_extended_tbl <- ldt_list$lum_int_extended_tbl
+	lum_int_extended_tbl <- ld_list$lum_int_extended_tbl
 	
-	ldt_list$plot <- plot_light_distribution(
+	ld_list$plot <- plot_light_distribution(
 		lum_int_extended_tbl,
 		line_color = line_color, 
 		line_size  = line_size,
-		title      = ldt_list$file_name, 
+		title      = ld_list$file_name, 
 		x_lab      = x_lab,
 		y_lab      = y_lab
 	)
 	
-	return(ldt_list)
+	return(ld_list)
 }
-ld_export_svg <-
-function(ldt_list, dir_path = "00_data/export/") {
+ld_write_svg <-
+function(ld_list, dir_path = "00_data/export/") {
 	
-	file_name <- ldt_list$file_name
+	file_name <- ld_list$file_name
 	
 	svglite(str_c(dir_path, file_name, ".svg"))
-	print(ldt_list$plot)
+	print(ld_list$plot)
 	dev.off()
 	
 }

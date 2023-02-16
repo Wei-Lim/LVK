@@ -24,7 +24,7 @@ file <- filepath[6]
 extract_lum_intensity <- function(C, i, gamma, Ng, data) {
 	
 	I   <- data[((i - 1) * Ng + 1):(i * Ng)] %>% as.numeric()
-	tbl <- tibble(C, gamma, I)
+	tbl <- tibble::tibble(C, gamma, I)
 	
 	return(tbl)
 }
@@ -39,7 +39,7 @@ read_ldt <- function(file) {
 	
 	ld_list = list(
 		
-		# Filepath 
+		## Filepath definitions
 		filepath  = file,
 		file_name = basename(file) %>% tools::file_path_sans_ext(),
 		
@@ -74,10 +74,10 @@ read_ldt <- function(file) {
 		report_no      = header[8],
 		
 		# Luminaire name
-		name_luminaire = header[9],
+		luminaire_name = header[9],
 		
 		# Luminaire number
-		no_luminaire   = header[10],
+		luminaire_no   = header[10],
 		
 		# File name
 		file_name_ldt  = header[11],
@@ -175,44 +175,44 @@ read_ldt <- function(file) {
 	   # 0 - no symmetry
 	   `0` = {
 		   	C     <- seq(0, 360 - Dc, Dc)
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   },
 	   
 	   # 1 - symmetry about the vertical axis
 	   `1` = {
 		   	C     <- 0
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   },
 	   
 	   # 2 - symmetry to plane C0-C180
 	   `2` = {
 		   	C     <- seq(0, 180, Dc)
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   },
 	   
 	   # 3 - symmetry to plane C90-C270
 	   `3` = {
 		   	C     <- seq(90, 270, Dc)
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   },
 	   
 	   # 4 - symmetry to plane C0-C180 and to plane C90-C270
 	   `4` = {
 		   	C     <- seq( 0,  90, Dc)
-		   	c_tbl <- tibble(C, i = 1:length(C))
+		   	c_tbl <- tibble::tibble(C, i = 1:length(C))
 	   }
 	)
 	
 	# Luminous intensity distribution (cd/1000 lumens)
 	lum_int_tbl <- c_tbl %>% 
-		mutate(tbl = future_map2(C, i, extract_lum_intensity, gamma = angle_G, Ng = Ng, data = data)) %>% 
-		select(-C, -i) %>% 
-		unnest(tbl) %>% 
-		pivot_wider(names_from = C, names_prefix = "C", values_from = I)
+		dplyr::mutate(tbl = future_map2(C, i, extract_lum_intensity, gamma = angle_G, Ng = Ng, data = data)) %>% 
+		dplyr::select(-C, -i) %>% 
+		tidyr::unnest(tbl) %>% 
+		tidyr::pivot_wider(names_from = C, names_prefix = "C", values_from = I)
 	
 	## * Extend luminous intensity data for plotting and calculating ----
 	tbl <- lum_int_tbl %>% 
-		pivot_longer(-gamma, "C", names_prefix = "C", names_transform = as.numeric, values_to = "I")
+		tidyr::pivot_longer(-gamma, "C", names_prefix = "C", names_transform = as.numeric, values_to = "I")
 	
 	switch(
 		Isym, 
@@ -222,60 +222,71 @@ read_ldt <- function(file) {
 		
 		# 1 - symmetry about the vertical axis
 		`1` = lum_int_extended_tbl <- tbl %>% 
-			bind_rows( 
-				tbl %>% mutate(C = 180) 
+			dplyr::bind_rows( 
+				tbl %>% dplyr::mutate(C = 180) 
 			),
 		
 		# 2 - symmetry to plane C0-C180
 		`2` = lum_int_extended_tbl <- tbl %>% 
-			bind_rows( 
+			dplyr::bind_rows( 
 				tbl %>% 
-					mutate(C = rev(C) + 180) %>%
-					filter(C != 180, C != 360)
+					dplyr::mutate(C = rev(C) + 180) %>%
+					dplyr::filter(C != 180, C != 360)
 			) %>% 
-			arrange(C),
+			dplyr::arrange(C),
 		
 		# 3 - symmetry to plane C90-C270
 		`3` = lum_int_extended_tbl <- tbl %>% 
-			bind_rows(
+			dplyr::bind_rows(
 				tbl %>% 
-					mutate(C = rev(C + 180) ) %>% 
-					mutate(C = if_else(C >= 360, C - 360, C)) %>% 
-					filter(C != 90, C != 270)
+					dplyr::mutate(C = rev(C + 180) ) %>% 
+					dplyr::mutate(C = if_else(C >= 360, C - 360, C)) %>% 
+					dplyr::filter(C != 90, C != 270)
 			) %>% 
-			arrange(C),
+			dplyr::arrange(C),
 		
 		# 4 - symmetry to plane C0-C180 and to plane C90-C270
 		`4` = {
 			tbl2 <- tbl %>% 
-				bind_rows(
+				dplyr::bind_rows(
 					tbl %>% 
-						mutate(C = rev(C + 90)) %>% 
-						filter(C != 90)
+						dplyr::mutate(C = rev(C + 90)) %>% 
+						dplyr::filter(C != 90)
 				) %>% 
-				arrange(C) 
+				dplyr::arrange(C) 
 			
 			lum_int_extended_tbl <- tbl2 %>% 
-				bind_rows(
+				dplyr::bind_rows(
 					tbl2 %>% 
-						mutate(C = rev(C) + 180) %>% 
-						filter(C != 180, C != 360)
+						dplyr::mutate(C = rev(C) + 180) %>% 
+						dplyr::filter(C != 180, C != 360)
 				) %>% 
-				arrange(C)
+				dplyr::arrange(C)
 		}
 	)
 	
 	lum_int_extended_tbl <- lum_int_extended_tbl %>% 
-		pivot_wider(names_from = C, names_prefix = "C", values_from = I) 
+		tidyr::pivot_wider(names_from = C, names_prefix = "C", values_from = I) 
 	
 	
-	# * Adding angles and luminous intensity tables to LDT-list ----
+	# * Appending angles and luminous intensity tables to LDT-list ----
 	ld_list <- ld_list %>% 
 		append(list(
+			
 			angleC               = angle_C,
 			angleG               = angle_G,
 			lum_int_tbl          = lum_int_tbl,
-			lum_int_extended_tbl = lum_int_extended_tbl
+			lum_int_extended_tbl = lum_int_extended_tbl,
+			
+			## IES additional definitions
+			# Photometric testing laboratory
+			test_lab = "-",
+			
+			# Photometry type: 1: C, 2: B, 3: C
+			photometry_type = "1",
+			
+			# ballast factor
+			ballast_factor = 1
 		))
 	
 	return(ld_list)
@@ -435,14 +446,15 @@ tictoc::toc()
 # 2.6 LD: Write LDT ----
 ld_list <- file_list[[1]]
 
-ld_write_ldt <- function(ld_list, dir_path = "00_data/export/") {
+ld_write_ldt <- function(ld_list, dir_path = "00_data/export/", user = "") {
 	
 	ld_list$file_name_ldt <- str_c(ld_list$file_name, ".ldt")
+	ld_list$date_user <- str_c( Sys.time() %>% format("%Y-%m-%d"), user, sep = ", " )
 	
 	# Select ldt header features
 	ldt_header <- c(
 		"company", "Ityp", "Isym", "Mc", "Dc", "Ng", "Dg", 
-		"report_no", "name_luminaire", "no_luminaire", "file_name_ldt", "date_user", 
+		"report_no", "luminaire_name", "luminaire_no", "file_name_ldt", "date_user", 
 		"length", "width", "height", 
 		"length_lum", "width_lum", "height_lum_C0", "height_lum_C90", "height_lum_C180", "height_lum_C270", 
 		"DFF", "LORL", "cf", "tilt", 
@@ -451,7 +463,7 @@ ld_write_ldt <- function(ld_list, dir_path = "00_data/export/") {
 	)
 	
 	# Convert to character array for writing lines
-	ldt_export_c <- c(
+	ldt_export_chr <- c(
 		ld_list[ldt_header] %>% as.character(),
 		ld_list$DR,
 		ld_list$angleC,
@@ -462,14 +474,14 @@ ld_write_ldt <- function(ld_list, dir_path = "00_data/export/") {
 			pull(I)
 	)
 	
-	writeLines(ldt_export_c, str_c("00_data/export/", ld_list$file_name, ".ldt"))
+	writeLines(ldt_export_chr, str_c(dir_path, ld_list$file_name, ".ldt"))
 	
 	return(invisible(NULL))
 	
 }
 
 tictoc::tic()
-map(file_list, ld_write_ldt)
+map(file_list, ld_write_ldt, user = "PIT")
 tictoc::toc()
 
 tictoc::tic()
@@ -479,9 +491,123 @@ tictoc::toc()
 
 
 # 2.7 LD: Write IES ----
+# IES file format description after ANSI/IESNA LM-63-2002
+
+ld_list <- file_list[[1]]
+dir_path <- "00_data/export/"
+
+ld_write_ies_lm63_2002 <- function(ld_list, dir_path = "00_data/export/") {
+	
+	# Luminous intensity in long table format
+	lum_int_extended_long_dt <- ld_list$lum_int_extended_tbl %>% 
+		
+		# use of data.table for better computing speed in filtering and pivot_longer
+		data.table::setDT() %>% 
+		
+		# Pivot longer
+		data.table::melt(
+			measure.vars  = patterns("C"),
+			variable.name = "C",
+			value.name    = "I"
+		)
+	
+	# Removing prefix from variable "C" names
+	lum_int_extended_long_dt[, C := str_remove(C, "C")]
+	
+	# TILT: Marker for end of keywords
+	tilt <- "TILT=NONE"
+	
+	# * Data descriptions ----
+	lamp_no             <- ld_list$lamp_no
+	lumens_per_lamp     <- ld_list$lum_flux / lamp_no
+	candela_multiplier  <- ld_list$LORL / 100
+	angle_vertical_no   <- ld_list$lum_int_extended_tbl %>% nrow()
+	angle_horizontal_no <- ld_list$lum_int_extended_tbl %>% select(-gamma) %>% ncol()
+	photometric_type    <- ld_list$photometry_type
+	
+	# units_type: luminous dimensions in feet (1) or in meters (2)
+	units_type <- 2 
+	width_lum  <- ld_list$width_lum
+	length_lum <- ld_list$length_lum
+	height_lum <- ld_list$height_lum_C0
+	
+	ballast_factor   <- ld_list$ballast_factor
+	future_use       <- "1"
+	input_watts      <- ld_list$power
+	angle_vertical   <- ld_list$lum_int_extended_tbl$gamma
+	angle_horizontal <- lum_int_extended_long_dt %>% 
+		distinct(C) %>% 
+		pull(C)
+	
+	candela_values <- angle_horizontal %>% 
+		map_chr( function(x) {
+			lum_int_extended_long_dt[C == x, .(I)][[1]] %>% 
+				str_c(collapse = " ")
+		})
+	
+	# * Checks ----
+	
+	# Tilted luminaire definition
+	# Note: conversion to TILT= INCLUDE is not implemented
+	if (ld_list$tilt != 0) tilt <- "TILT=INCLUDE"
+	
+	# Absolute photometry
+	if (ld_list$lamp_no == "-1") lumens_per_lamp <- lamp_no
+	
+	# Dimensions luminous shape
+	
+	# Circular or vertical cylindrical
+	if (ld_list$width_lum == 0) {
+		width_lum  <- -ld_list$length_lum
+		length_lum <- -ld_list$length_lum
+	}
+	
+	# Luminous height definition
+	# Not entirely correct solution
+	if ( ld_list$height_lum_C0   != 0 | ld_list$height_lum_C90  != 0 | 
+		 ld_list$height_lum_C180 != 0 | ld_list$height_lum_C270 != 0 ) {
+		height_lum <- max(ld_list$height_lum_C0, ld_list$height_lum_C90, ld_list$height_lum_C180, ld_list$height_lum_C270)
+	}
+	
+	ies_export_chr <- c(
+		
+		# First line distinguishes from other ies-formats
+		"IESNA:LM-63-2002",
+		
+		# * Keywords ----
+		str_c("[TEST]",      ld_list$report_no, sep = " "),
+		str_c("[TESTLAB]",   ld_list$test_lab, sep = " "),
+		str_c("[ISSUEDATE]", Sys.time() %>% format("%Y-%m-%d"), sep = " "),
+		str_c("[MANUFAC]",   ld_list$company, sep = " "),
+		str_c("[LUMCAT]",    ld_list$luminaire_no, sep = " "),
+		str_c("[LUMINAIRE]", ld_list$luminaire_name, sep = " "),
+		"[FILEGENINFO] created by R package lighting",
+		
+		tilt,
+		# End of keywords
+		
+		str_c(lamp_no, lumens_per_lamp, candela_multiplier, 
+			  angle_vertical_no, angle_horizontal_no, photometric_type, 
+			  units_type, width_lum, length_lum, height_lum, sep = " "),
+		str_c(ballast_factor, future_use, input_watts, sep = " "),
+		str_c(angle_vertical, collapse = " "),
+		str_c(angle_horizontal, collapse = " "),
+		candela_values
+	)
+	
+	writeLines(ies_export_chr, str_c(dir_path, ld_list$file_name, ".ies"))
+	
+}
 
 
-# 2.8 LD: Update LD list ----
+
+tictoc::tic()
+map(file_list, ld_write_ies_lm63_2002)
+tictoc::toc()
+
+
+
+# 2.8 LD: Update LD with myview ----
 
 # 3.0 DUMP FUNCTIONS ----
 dump(
@@ -490,7 +616,8 @@ dump(
 		"read_ldt", 
 		"plot_light_distribution",
 		"ld_add_light_distribution",
-		"ld_write_svg"
+		"ld_write_svg",
+		"ld_write_ies_lm53_2002"
 	), 
 	file = "00_scripts/light_distribution.R"
 )
